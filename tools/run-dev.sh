@@ -16,4 +16,7 @@ export MESA_SHADER_CACHE_DIR="$XDG_CACHE_HOME"
 export __GL_SHADER_DISK_CACHE_PATH="$XDG_CACHE_HOME"
 export TMPDIR="$root/tmp"
 mkdir -p -- "$XDG_CACHE_HOME" "$TMPDIR"
-exec "${GODOT:-godot}" --path "$project_dir" --quiet "$@"
+if [ -f "$root/profile/settings.cfg" ] && grep -Fxq 'renderer="mobile"' "$root/profile/settings.cfg"; then
+	set -- --rendering-method mobile "$@"
+fi
+exec "${GODOT:-godot}" --display-driver wayland --path "$project_dir" --quiet "$@"

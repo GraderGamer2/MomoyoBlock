@@ -8,7 +8,6 @@ const CHUNK_BITS := 5
 const CHUNK_SIZE := 1 << CHUNK_BITS
 const TILE_SIZE := 24
 const PAD_ROW := 14
-const ORIGIN_SEED := 472913
 const WORLD_REVISION := 1
 const SURFACE_BOUNDS := Rect2i(-192, -32, 384, 128)
 const STATION_BOUNDS := Rect2i(-96, -24, 192, 80)
@@ -22,11 +21,15 @@ const TILE_COLORS: Array[Color] = [
 var region: int
 var bounds: Rect2i
 var edits: Dictionary[Vector2i, int] = {}
+var harvested: Dictionary[int, bool] = {}
+var planet: PlanetProfile
 
 
-func _init(world_region: int) -> void:
+func _init(world_region: int, sector := Vector2i.ZERO) -> void:
 	region = world_region
 	bounds = SURFACE_BOUNDS if region == Region.SURFACE else STATION_BOUNDS
+	if region == Region.SURFACE:
+		planet = PlanetProfile.new(sector)
 
 
 static func chunk_at(cell: Vector2i) -> Vector2i:
@@ -70,7 +73,7 @@ static func is_pad(cell: Vector2i) -> bool:
 	return cell.y == PAD_ROW and cell.x >= -1 and cell.x <= 1
 
 
-static func surface_row(x: int) -> int:
+func surface_row(x: int) -> int:
 	if x >= -9 and x <= 11:
 		return PAD_ROW
 	var segment := x >> 4
@@ -79,7 +82,7 @@ static func surface_row(x: int) -> int:
 	var right := _terrain_hash(segment + 1, 11) % 13 - 6
 	var height := floori(lerpf(float(left), float(right), progress / 16.0))
 	var ramp := minf(1.0, minf(absf(x + 9), absf(x - 11)) / 12.0)
-	return PAD_ROW + roundi(height * ramp)
+	return PAD_ROW + roundi(height * ramp * float(planet.details.relief))
 
 
 func _base_block(cell: Vector2i, surface: int) -> int:
@@ -109,7 +112,26 @@ func _base_block(cell: Vector2i, surface: int) -> int:
 	return Block.STONE
 
 
-static func _terrain_hash(x: int, y: int) -> int:
-	var value := ((x * 374761393) ^ (y * 668265263) ^ ORIGIN_SEED) & 0x7fffffff
-	value = ((value ^ (value >> 13)) * 1274126177) & 0x7fffffff
-	return value ^ (value >> 16)
+func forage_kind(x: int) -> int:
+	if region != Region.SURFACE or harvested.has(x):
+		return 0
+	if x == -6:
+		return 1
+	if x == 7:
+		return 2
+	if absi(x) <= 11 or posmod(x, 7) != 0:
+		return 0
+	return 1 + _terrain_hash(x, 37) % 2
+
+
+func journal() -> Dictionary:
+	return {"blocks": edits, "harvested": harvested}
+
+
+func restore_journal(data: Dictionary) -> void:
+	edits.assign(data.get("blocks", {}))
+	harvested.assign(data.get("harvested", {}))
+
+
+func _terrain_hash(x: int, y: int) -> int:
+	return PlanetProfile.hash_cell(x, y, planet.seed)

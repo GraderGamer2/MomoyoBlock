@@ -3,14 +3,14 @@ config_version=5
 [application]
 
 config/name="MomoyoBlock"
-config/version="0.1.0"
+config/version="0.2.0"
 boot_splash/show_image=false
 boot_splash/bg_color=Color(0.035, 0.063, 0.102, 1)
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/use_custom_user_dir=true
 config/custom_user_dir_name="profile"
 config/disable_project_settings_override.release=true
-run/main_scene="res://game/main.tscn"
+run/main_scene="res://game/app.tscn"
 run/print_header=false
 run/disable_stdout=true
 run/disable_stderr.release=true
@@ -23,6 +23,7 @@ file_logging/enable_file_logging.pc=false
 [display]
 
 display_server/driver.linuxbsd="wayland"
+window/size/borderless=true
 window/size/viewport_width=1152
 window/size/viewport_height=648
 window/stretch/mode="canvas_items"
@@ -59,7 +60,25 @@ save_world={
 "events": [Object(InputEventKey,"physical_keycode":4194336)]
 }
 
+star_chart={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":77)]
+}
+gather={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":70)]
+}
+eat={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":82)]
+}
+drink={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":84)]
+}
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
+rendering_device/fallback_to_opengl3=true
 environment/defaults/default_clear_color=Color(0.035, 0.063, 0.102, 1)

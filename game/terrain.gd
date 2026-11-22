@@ -5,6 +5,7 @@ extends TileMapLayer
 const RADIUS := 1
 
 var world: BlockWorld
+var forage := ForageLayer.new()
 var _loaded: Dictionary[Vector2i, PackedByteArray] = {}
 var _center := Vector2i(1000000, 1000000)
 
@@ -14,6 +15,8 @@ func _ready() -> void:
 	navigation_enabled = false
 	occlusion_enabled = false
 	tile_set = _make_tileset()
+	forage.z_index = 1
+	add_child(forage)
 
 
 func open_region(new_world: BlockWorld, point: Vector2) -> void:
@@ -41,6 +44,7 @@ func stream_around(point: Vector2) -> void:
 			if not _loaded.has(key):
 				_load(key)
 
+	_refresh_forage()
 
 func is_editable(cell: Vector2i) -> bool:
 	return world.bounds.has_point(cell) and _loaded.has(BlockWorld.chunk_at(cell)) and not BlockWorld.is_pad(cell)
@@ -60,6 +64,42 @@ func set_block(cell: Vector2i, material: int) -> void:
 	_loaded[key] = cells
 	world.record_edit(cell, material)
 	_paint(cell, material)
+	if world.region == BlockWorld.Region.SURFACE and absi(cell.y - world.surface_row(cell.x)) <= 1:
+		_refresh_forage()
+
+
+func nearest_forage(point: Vector2, range_squared: float) -> Vector2i:
+	var closest := Vector2i(100000, 100000)
+	for cell in forage.markers:
+		var center := (Vector2(cell) + Vector2(0.5, 0.5)) * BlockWorld.TILE_SIZE
+		var distance := point.distance_squared_to(center)
+		if distance <= range_squared:
+			closest = cell
+			range_squared = distance
+	return closest
+
+
+func harvest(cell: Vector2i) -> void:
+	world.harvested[cell.x] = true
+	forage.markers.erase(cell)
+	forage.queue_redraw()
+
+
+func _refresh_forage() -> void:
+	forage.markers.clear()
+	if world.region == BlockWorld.Region.SURFACE:
+		var start := maxi(world.bounds.position.x, (_center.x - RADIUS) * BlockWorld.CHUNK_SIZE)
+		var end := mini(world.bounds.end.x, (_center.x + RADIUS + 1) * BlockWorld.CHUNK_SIZE)
+		for x in range(start, end):
+			var kind := world.forage_kind(x)
+			if kind == 0:
+				continue
+			var ground := Vector2i(x, world.surface_row(x))
+			var cell := ground + Vector2i.UP
+			if is_editable(cell) and block_at(cell) == BlockWorld.Block.EMPTY and block_at(ground) != BlockWorld.Block.EMPTY:
+				forage.markers[cell] = kind
+		forage.tint = world.planet.details.sky.lightened(0.45)
+	forage.queue_redraw()
 
 
 func _load(key: Vector2i) -> void:

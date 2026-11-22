@@ -2,14 +2,16 @@ class_name Horizon
 extends Node2D
 
 var _region := BlockWorld.Region.SURFACE
+var _planet: PlanetProfile
 
 
 func _ready() -> void:
 	get_viewport().size_changed.connect(queue_redraw)
 
 
-func show_region(region: int) -> void:
+func show_region(region: int, planet: PlanetProfile = null) -> void:
 	_region = region
+	_planet = planet
 	queue_redraw()
 
 
@@ -17,7 +19,8 @@ func _draw() -> void:
 	var size := get_viewport_rect().size
 	var in_orbit := _region == BlockWorld.Region.STATION
 	var sky_top := Color("#10142c") if in_orbit else Color("#152641")
-	var sky_bottom := Color("#2b2747") if in_orbit else Color("#709e90")
+	var horizon := Color("#709e90") if _planet == null else Color(_planet.details.sky)
+	var sky_bottom := Color("#2b2747") if in_orbit else horizon
 	var band_height := size.y / 36.0
 	for band in 36:
 		draw_rect(Rect2(0.0, band * band_height, size.x, band_height + 1.0),

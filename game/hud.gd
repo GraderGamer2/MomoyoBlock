@@ -12,6 +12,10 @@ var _region: Label
 var _location: Label
 var _status: Label
 var _travel: Label
+var _environment: Label
+var _supplies: Label
+var _meters: Array[ProgressBar] = []
+var _meter_values: Array[Label] = []
 var _transit_title: Label
 var _transit_route: Label
 var _slot_panels: Array[PanelContainer] = []
@@ -26,8 +30,9 @@ func _ready() -> void:
 	screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var top := HBoxContainer.new()
-	_anchor(screen, top, Control.PRESET_TOP_WIDE, Vector2(26, 22), Vector2(-26, 22))
+	_anchor(screen, top, Control.PRESET_TOP_WIDE, Vector2(26, 54), Vector2(-26, 54))
 	var card := _panel(Color("#73baad"))
+	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	top.add_child(card)
 	var heading := VBoxContainer.new()
 	heading.add_theme_constant_override("separation", 1)
@@ -36,19 +41,53 @@ func _ready() -> void:
 	_location = _label("", 25, PAPER)
 	heading.add_child(_region)
 	heading.add_child(_location)
+	_status = _label("", 13, GREEN)
+	_status.hide()
+	heading.add_child(_status)
 
 	var spacer := Control.new()
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
-	_status = _label("", 15, GREEN)
-	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	top.add_child(_status)
+	var vitals := _panel()
+	vitals.custom_minimum_size.x = 225.0
+	vitals.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	top.add_child(vitals)
+	var readings := VBoxContainer.new()
+	readings.add_theme_constant_override("separation", 4)
+	vitals.add_child(readings)
+	_environment = _label("", 12, AMBER)
+	readings.add_child(_environment)
+	var names := ["Health", "Hunger", "Thirst", "Oxygen"]
+	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf")]
+	for i in names.size():
+		var row := HBoxContainer.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		readings.add_child(row)
+		var reading_name := _label(names[i], 13, PAPER)
+		reading_name.custom_minimum_size.x = 57.0
+		row.add_child(reading_name)
+		var bar := ProgressBar.new()
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bar.custom_minimum_size = Vector2(98, 8)
+		bar.show_percentage = false
+		bar.add_theme_stylebox_override("background", _meter_style(Color("#26384a")))
+		bar.add_theme_stylebox_override("fill", _meter_style(colors[i]))
+		row.add_child(bar)
+		_meters.append(bar)
+		var value := _label("", 12, PAPER)
+		value.custom_minimum_size.x = 30
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(value)
+		_meter_values.append(value)
+	_supplies = _label("", 13, GREEN)
+	readings.add_child(_supplies)
 
-	var legend := _label("A / D  Move     Space  Jump\nLeft click  Mine     Right click  Build\nF5  Save expedition", 13, PAPER)
+	var legend := _label("A / D Move     Space Jump\nLeft click Mine     Right click Build\nF Gather     R Eat     T Drink\nF5 Save     Esc Pause", 13, PAPER)
 	var controls := _panel()
-	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -104), Vector2(26, -20))
+	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -120), Vector2(26, -20))
 	controls.add_child(legend)
 
 	var bar := VBoxContainer.new()
@@ -87,10 +126,10 @@ func _ready() -> void:
 	route.add_child(_transit_route)
 
 
-func show_region(region: int) -> void:
+func show_region(region: int, planet: PlanetProfile) -> void:
 	var on_surface := region == BlockWorld.Region.SURFACE
-	_region.text = "PLANET SURFACE" if on_surface else "LOW ORBIT"
-	_location.text = "Cinder Reach" if on_surface else "Relay Nine"
+	_region.text = String(planet.details.biome).to_upper() if on_surface else "ORBITAL STATION"
+	_location.text = planet.title() if on_surface else "Relay Nine"
 
 
 func show_inventory(inventory: PackedInt32Array, selected: int) -> void:
@@ -99,23 +138,24 @@ func show_inventory(inventory: PackedInt32Array, selected: int) -> void:
 		_slot_panels[i].add_theme_stylebox_override("panel", _slot_styles[int(i == selected)])
 
 
-func show_travel(region: int, nearby: bool) -> void:
+func show_travel(region: int, nearby: bool, planet_name: String) -> void:
 	var prompt := "Find the beacon to travel"
 	if nearby:
-		prompt = "E  Launch to Relay Nine" if region == BlockWorld.Region.SURFACE else "E  Return to Cinder Reach"
+		prompt = "E  Launch to Relay Nine" if region == BlockWorld.Region.SURFACE else "E  Return to %s   ·   M  Star Chart" % planet_name
 	if _travel.text != prompt:
 		_travel.text = prompt
 
 
 func show_status(message: String, saved: bool = true) -> void:
 	_status.text = message
+	_status.visible = not message.is_empty()
 	_status.modulate = Color.WHITE if saved else AMBER
 
 
-func set_transit_route(target: int) -> void:
+func set_transit_route(target: int, planet_name: String) -> void:
 	var outbound := target == BlockWorld.Region.STATION
 	_transit_title.text = "Ascending to orbit" if outbound else "Returning to the surface"
-	_transit_route.text = "CINDER REACH  →  RELAY NINE" if outbound else "RELAY NINE  →  CINDER REACH"
+	_transit_route.text = "%s  →  RELAY NINE" % planet_name.to_upper() if outbound else "RELAY NINE  →  %s" % planet_name.to_upper()
 
 
 static func _anchor(parent: Control, item: Control, preset: int, start: Vector2, end: Vector2) -> void:
@@ -155,3 +195,24 @@ static func _style(border: Color) -> StyleBoxFlat:
 	style.content_margin_top = 7
 	style.content_margin_bottom = 7
 	return style
+
+func show_survival(state: SurvivalState, air: String, weather: String) -> void:
+	var levels := [state.health, state.hunger, state.thirst, state.oxygen]
+	for i in _meters.size():
+		_meters[i].value = levels[i]
+		var value := str(ceili(levels[i]))
+		if _meter_values[i].text != value:
+			_meter_values[i].text = value
+	var supplies := "Rations %d  ·  Water %d" % [state.food, state.water]
+	if _supplies.text != supplies:
+		_supplies.text = supplies
+	var conditions := "%s  ·  %s" % [weather, air]
+	if _environment.text != conditions:
+		_environment.text = conditions
+
+
+static func _meter_style(fill: Color) -> StyleBoxFlat:
+	var result := StyleBoxFlat.new()
+	result.bg_color = fill
+	result.set_corner_radius_all(2)
+	return result

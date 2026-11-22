@@ -1,33 +1,43 @@
 # MomoyoBlock
 
-MomoyoBlock is a 2D side-view building and exploration sandbox. Start on Cinder Reach, use the landing beacon to reach Relay Nine in orbit, and make changes to both locations. The first playtest uses placeholder geometry and colors.
+MomoyoBlock is a 2D side-view survival and building sandbox. Explore Cinder Reach, use Relay Nine to chart jumps to seeded planets, and build shelters while managing food, water, and suit oxygen. This alpha uses placeholder visuals.
 
-## Play on Linux x86_64
+## Play on Linux x86_64 with Wayland
 
-Download `MomoyoBlock-linux-x86_64.tar.gz` from the [Actions build](https://github.com/GraderGamer2/MomoyoBlock/actions/workflows/build.yml). Extract it into your home directory and launch it.
+Download `MomoyoBlock-linux-x86_64.tar.gz` from the [Actions build](https://github.com/GraderGamer2/MomoyoBlock/actions/workflows/build.yml). Extract it into your home directory and launch it from a Wayland session.
 
 ```sh
 tar -xzf MomoyoBlock-linux-x86_64.tar.gz -C "$HOME"
 "$HOME/.MomoyoBlock/MomoyoBlock"
 ```
 
-The archive contains the game and its runtime files. It updates the installed game on extraction, while your expedition lives at `~/.MomoyoBlock/profile/saves/expedition.save`. The game saves after travel, with **F5**, and when the window closes. Game-generated files, including graphics caches, live under `~/.MomoyoBlock`. The release disables file and console logging.
+Re-extracting the archive updates the game. Saves live at `~/.MomoyoBlock/profile/saves/expedition.save` and existing 0.1 expeditions load in 0.2. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
 
-The build targets Linux x86_64 with SSE4.2 and OpenGL 3.3 or OpenGL ES 3.0 support. The engine includes native Wayland and X11.
+The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize.
+
+## Controls
 
 | Input | Action |
 |---|---|
 | A / D or ← / → | Walk |
 | Space | Jump |
 | Left click | Mine a block in reach |
-| Right click | Place the selected building block |
+| Right click | Place the selected block |
 | 1–4 | Select a building material |
-| E at a beacon | Travel between the surface and orbit |
-| F5 | Save the expedition |
+| F | Gather the nearest food or water source in reach |
+| R / T | Eat a ration or drink water |
+| E at a beacon | Travel between the current planet and Relay Nine |
+| M at the Relay Nine beacon | Open the star chart and pick a sector |
+| F5 | Save |
+| Esc | Pause or return to the previous menu |
+
+Oxygen replenishes in breathable air and near a landing beacon. Vacuum and unbreathable atmospheres drain the tank. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
+
+Use **Settings** from the title or pause menu. **Apply settings** saves the frame cap, VSync request, master volume, and renderer. FPS, VSync, and volume apply immediately. The compositor and graphics driver determine supported presentation modes. Renderer changes apply on the next launch. Launch with `--rendering-method gl_compatibility` to choose Compatibility for one session.
 
 ## Develop locally
 
-Install [Godot 4.7.2 Standard](https://godotengine.org/download/archive/4.7.2-stable/) as `godot` or set `GODOT` to the editor executable. To keep your checkout and editor files in the same game directory, clone into `~/.MomoyoBlock/dev/source`.
+Install [Godot 4.7.2 Standard](https://godotengine.org/download/archive/4.7.2-stable/) as `godot` or set `GODOT` to the editor executable. Keep your development files inside the game directory by cloning into `~/.MomoyoBlock/dev/source`.
 
 ```sh
 mkdir -p "$HOME/.MomoyoBlock/dev"
@@ -37,12 +47,12 @@ tools/run-dev.sh --editor
 tools/test-dev.sh
 ```
 
-Use `tools/run-dev.sh` on its own to play from source. The development profile is under `~/.MomoyoBlock/dev/profile`. Development launches retain terminal errors and warnings and disable file logging.
+Use `tools/run-dev.sh` to play from source. Development uses `~/.MomoyoBlock/dev/profile` and keeps terminal warnings and errors. Headless launches are available for tests.
 
 ## Build a playtest
 
-Run `tools/build-linux.sh` on Linux x86_64 with GCC, SCons, Wayland's scanner, Xvfb, xauth, xdotool, curl, unzip, patch, and binutils available. The script verifies the upstream downloads, builds the Godot 4.7.2 release template using GCC `-O3` and full LTO, then embeds the game and verifies the packaged runtime. It uses a portable x86_64 target and Godot's standard modules. GDScript goes through Godot's export pipeline. The game streams nearby chunks, stores block data in packed arrays, and saves terrain edits as deltas.
+Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, Weston, Xvfb, xauth, xdotool, curl, unzip, patch, and binutils. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. It embeds the game and tests the resulting executable as a Wayland client in a nested compositor.
 
-The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Ordinary gameplay pushes leave builds available on demand. The workflow also runs when its own definition changes on `main`.
+The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Run the workflow on demand after gameplay changes. Updating its definition on `main` also starts a build.
 
-[Godot's Linux build guide](https://docs.godotengine.org/en/4.7/engine_details/development/compiling/compiling_for_linuxbsd.html) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
+[Godot Linux build guide](https://docs.godotengine.org/en/4.7/engine_details/development/compiling/compiling_for_linuxbsd.html) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)

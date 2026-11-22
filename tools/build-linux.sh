@@ -75,7 +75,7 @@ fi
 command -v wayland-scanner >/dev/null
 scons --directory="$source_dir" --jobs="${MOMOYO_BUILD_JOBS:-4}" \
 	platform=linuxbsd target=template_release arch=x86_64 optimize=speed lto=full \
-	debug_symbols=no use_llvm=no wayland=yes "accesskit_sdk_path=$accesskit_dir"
+	debug_symbols=no use_llvm=no x11=no wayland=yes "accesskit_sdk_path=$accesskit_dir"
 test -x "$template"
 
 mkdir -p "$stage/.MomoyoBlock/licenses"

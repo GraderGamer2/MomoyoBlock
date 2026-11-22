@@ -5,15 +5,34 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
+#include <vector>
 
 namespace MomoyoRuntime {
 
 // Godot and the graphics driver read these before the game script can run.
-inline bool prepare(int argc, char *const argv[]) {
-	for (int i = 1; i < argc && std::strcmp(argv[i], "--") != 0; ++i) {
-		if (std::strcmp(argv[i], "--log-file") == 0) {
+inline bool prepare(int &argc, char **&argv) {
+	bool use_renderer_preference = true;
+	for (int i = 1; i < argc; ++i) {
+		const std::string argument = argv[i];
+		if (argument == "--" || argument == "++") {
+			break;
+		}
+		if (argument == "--log-file") {
 			return false;
+		}
+		if (argument == "--display-driver" && i + 1 < argc) {
+			const std::string driver = argv[i + 1];
+			if (driver != "wayland" && driver != "headless") {
+				return false;
+			}
+			if (driver == "headless") {
+				use_renderer_preference = false;
+			}
+		}
+		if (argument == "--headless" || argument == "--rendering-method" || argument == "--rendering-driver") {
+			use_renderer_preference = false;
 		}
 	}
 
@@ -39,6 +58,22 @@ inline bool prepare(int argc, char *const argv[]) {
 			setenv("__GL_SHADER_DISK_CACHE_PATH", cache.c_str(), 1) != 0 ||
 			setenv("TMPDIR", temp.c_str(), 1) != 0) {
 		return false;
+	}
+	if (use_renderer_preference) {
+		std::ifstream settings(root + "/profile/settings.cfg");
+		std::string line;
+		while (std::getline(settings, line)) {
+			if (line == "renderer=\"mobile\"") {
+				static char flag[] = "--rendering-method";
+				static char method[] = "mobile";
+				static std::vector<char *> arguments;
+				arguments = { argv[0], flag, method };
+				arguments.insert(arguments.end(), argv + 1, argv + argc + 1);
+				argc += 2;
+				argv = arguments.data();
+				break;
+			}
+		}
 	}
 	return std::freopen("/dev/null", "w", stdout) != nullptr &&
 			std::freopen("/dev/null", "w", stderr) != nullptr;

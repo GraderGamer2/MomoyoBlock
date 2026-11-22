@@ -1,4 +1,4 @@
-name: Linux x86_64 playtest
+name: Linux x86_64 Wayland playtest
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - name: Install build and display tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends scons libwayland-bin libgl1-mesa-dri xvfb xauth xdotool
+          sudo apt-get install -y --no-install-recommends scons libwayland-bin libgl1-mesa-dri weston xvfb xauth xdotool
       - name: Test, build, and package Linux
         run: tools/build-linux.sh
       - name: Upload Linux playtest

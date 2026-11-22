@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://game/main.gd" id="1"]
 [ext_resource type="Script" path="res://game/terrain.gd" id="2"]
@@ -6,6 +6,10 @@
 [ext_resource type="Script" path="res://game/backdrop.gd" id="4"]
 [ext_resource type="Script" path="res://game/hud.gd" id="5"]
 [ext_resource type="Script" path="res://game/beacon.gd" id="6"]
+
+[ext_resource type="Script" path="res://game/weather.gd" id="7"]
+
+[ext_resource type="Script" path="res://game/wildlife.gd" id="8"]
 
 [sub_resource type="RectangleShape2D" id="ExplorerShape"]
 size = Vector2(18, 28)
@@ -46,6 +50,17 @@ z_index = 3
 points = PackedVector2Array(1, 1, 23, 1, 23, 23, 1, 23)
 width = 1.5
 closed = true
+
+[node name="Wildlife" type="Node2D" parent="."]
+z_index = 1
+script = ExtResource("8")
+
+[node name="Weather" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="Front" type="Node2D" parent="Weather"]
+visible = false
+script = ExtResource("7")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 4

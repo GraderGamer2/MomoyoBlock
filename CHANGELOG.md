@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 · 2026-11-22
+
+- Added a title and pause menu, persistent settings, and a draggable Wayland title bar with window controls.
+- Added adjustable FPS limit, VSync, master volume, and a choice of OpenGL Compatibility or Vulkan Mobile.
+- Added health, hunger, thirst, suit oxygen, gathering, and rescue at beacons.
+- Added a star chart with seeded planet addresses, four initial planetary profiles, forage, ambient wildlife, and recurring weather.
+- Persisted planet-specific terrain and harvests, station edits, and survival status. Added migration for expeditions from 0.1.
+- Made the Linux x86_64 release Wayland-only and updated the release smoke test to use a Wayland compositor.
+
 ## 0.1.0 · 2026-11-22
 
 - Opened a first playable route between Cinder Reach and Relay Nine, with direct movement and building on the surface and in orbit.
