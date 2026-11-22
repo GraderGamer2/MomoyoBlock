@@ -236,6 +236,11 @@ func _paint_atlas() -> void:
 			image.fill_rect(Rect2i(x + 7, 8, 7, 7), Color("#ebaa6d"))
 		elif block == BlockWorld.Block.ALLOY:
 			image.fill_rect(Rect2i(x + 3, 3, size - 6, 2), color.lightened(0.27))
+		elif block == BlockWorld.Block.HULL:
+			image.fill_rect(Rect2i(x + 3, 3, size - 6, size - 7), color.darkened(0.15))
+			image.fill_rect(Rect2i(x + 5, 5, size - 10, 2), color.lightened(0.37))
+			image.fill_rect(Rect2i(x + 3, size - 6, 2, 2), Color("#c6a370"))
+			image.fill_rect(Rect2i(x + size - 5, size - 6, 2, 2), Color("#c6a370"))
 		elif block == BlockWorld.Block.BEACON:
 			image.fill_rect(Rect2i(x + 1, 0, size - 2, 4), Color("#f5cc89"))
 

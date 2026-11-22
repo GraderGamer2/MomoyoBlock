@@ -65,7 +65,12 @@ func open_panel(title: String, subtitle: String, as_title := false) -> VBoxConta
 func finish_panel(focus: Control = null) -> void:
 	_body.add_child(_feedback)
 	if focus != null:
-		focus.grab_focus.call_deferred()
+		_focus_visible.call_deferred(focus)
+
+
+func _focus_visible(control: Control) -> void:
+	if is_instance_valid(control) and control.is_inside_tree() and control.is_visible_in_tree():
+		control.grab_focus()
 
 
 func show_feedback(message: String) -> void:

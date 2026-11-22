@@ -4,6 +4,12 @@ extends RefCounted
 const MAX_LEVEL := 100.0
 const TICK := 0.25
 const MAX_SUPPLIES := 99
+const VACUUM_DRAIN := 1.10
+const STORM_SURCHARGE := 0.20
+const HYPOXIA_DAMAGE := 4.0
+const SUIT_PRESSURE_LIMIT := 175
+const CABIN_TEMPERATURE := 21.0
+const CABIN_PRESSURE := 101
 
 var health := MAX_LEVEL
 var hunger := MAX_LEVEL
@@ -14,20 +20,23 @@ var water := 2
 var elapsed := 0.0
 
 
-func advance(seconds: float, breathable: bool, harsh_weather: bool) -> void:
+func advance(seconds: float, breathable: bool, harsh_weather: bool, pressure := CABIN_PRESSURE,
+		temperature := CABIN_TEMPERATURE, reinforced := false) -> void:
 	elapsed += seconds
-	hunger = maxf(0.0, hunger - 0.17 * seconds)
-	thirst = maxf(0.0, thirst - (0.58 if harsh_weather else 0.29) * seconds)
-	var oxygen_rate := 16.0 if breathable else (-2.3 if harsh_weather else -1.65)
+	var cold := clampf((4.0 - temperature) * 0.002, 0.0, 0.11)
+	var heat := clampf((temperature - 28.0) * 0.004, 0.0, 0.19)
+	hunger = maxf(0.0, hunger - (0.17 + cold) * seconds)
+	thirst = maxf(0.0, thirst - (0.29 + heat + (0.20 if harsh_weather else 0.0)) * seconds)
+	var oxygen_rate := 16.0 if breathable else -(VACUUM_DRAIN + (STORM_SURCHARGE if harsh_weather else 0.0))
 	oxygen = clampf(oxygen + oxygen_rate * seconds, 0.0, MAX_LEVEL)
 
-	var damage := 0.0
+	var damage := maxf(0.0, float(pressure - SUIT_PRESSURE_LIMIT)) * (0.004 if reinforced else 0.020)
 	if hunger <= 0.0:
 		damage += 1.4
 	if thirst <= 0.0:
 		damage += 2.8
 	if oxygen <= 0.0:
-		damage += 7.0
+		damage += HYPOXIA_DAMAGE
 	if damage > 0.0:
 		health = maxf(0.0, health - damage * seconds)
 	elif minf(hunger, thirst) > 72.0 and oxygen > 70.0:

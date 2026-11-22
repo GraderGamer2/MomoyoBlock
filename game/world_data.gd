@@ -2,7 +2,7 @@ class_name BlockWorld
 extends RefCounted
 
 enum Region { SURFACE, STATION }
-enum Block { EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE }
+enum Block { EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL }
 
 const CHUNK_BITS := 5
 const CHUNK_SIZE := 1 << CHUNK_BITS
@@ -12,14 +12,19 @@ const LEGACY_REVISION := 1
 const WORLD_REVISION := 2
 const LEGACY_SURFACE_BOUNDS := Rect2i(-192, -32, 384, 128)
 const LEGACY_STATION_BOUNDS := Rect2i(-96, -24, 192, 80)
-const STATION_HULL := Rect2i(-13, PAD_ROW - 7, 27, 9)
+const STATION_CABIN := Rect2i(-18, PAD_ROW - 6, 27, 6)
+const STATION_HATCH := Vector2i(STATION_CABIN.end.x, PAD_ROW - 3)
+const STATION_WORKBENCH := Vector2i(-9, PAD_ROW - 1)
+const STATION_HULL := Rect2i(-19, PAD_ROW - 7, 44, 11)
 const STATION_RESCUE_ROW := 56
 const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block.ORE]
 const MATERIAL_NAMES: Array[String] = ["Soil", "Stone", "Alloy", "Ore"]
+const BLOCK_NAMES := ["Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone", "Pressure hull"]
+const MINING_SECONDS := [0.0, 0.30, 0.44, 1.16, 1.78, 1.60, 0.0, 0.36, 0.88, 1.66, 1.36, 2.05]
 const TILE_COLORS: Array[Color] = [
 	Color.TRANSPARENT, Color("#aacea1"), Color("#856252"), Color("#50536e"),
 	Color("#6f8d9d"), Color("#60768b"), Color("#43696b"), Color("#bca474"),
-	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"),
+	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"),
 ]
 
 var region: int
@@ -141,7 +146,16 @@ static func mined_material(material: int) -> int:
 			return Block.SOIL
 		Block.SHALE, Block.BASALT, Block.FROSTSTONE:
 			return Block.STONE
+		Block.HULL:
+			return Block.ALLOY
 	return material
+
+
+static func mining_time(material: int, has_pick: bool) -> float:
+	var seconds: float = MINING_SECONDS[material]
+	if has_pick and seconds >= 0.85:
+		seconds /= 1.7
+	return seconds
 
 
 func surface_row(x: int) -> int:
@@ -162,14 +176,7 @@ func _base_block(cell: Vector2i, surface: int) -> int:
 	if is_pad(cell):
 		return Block.BEACON
 	if region == Region.STATION:
-		if cell.x >= -13 and cell.x <= 13:
-			if cell.y == PAD_ROW or cell.y == PAD_ROW + 1:
-				return Block.ALLOY
-			if absi(cell.x) >= 7 and cell.y == PAD_ROW - 7:
-				return Block.ALLOY
-			if absi(cell.x) == 13 and cell.y > PAD_ROW - 7 and cell.y < PAD_ROW:
-				return Block.ALLOY
-		return Block.EMPTY
+		return _station_structure(cell)
 
 	var depth := cell.y - surface
 	if depth < 0:
@@ -183,6 +190,58 @@ func _base_block(cell: Vector2i, surface: int) -> int:
 	if _terrain_hash(cell.x, cell.y) % _ore_period == 0:
 		return Block.ORE
 	return _rock
+
+
+func _station_structure(cell: Vector2i) -> int:
+	if not STATION_HULL.has_point(cell):
+		return Block.EMPTY
+	var left := STATION_CABIN.position.x - 1
+	var top := STATION_CABIN.position.y - 1
+	var hatch := STATION_HATCH.x
+	if cell.y == PAD_ROW:
+		return Block.HULL if cell.x <= hatch else Block.ALLOY
+	if cell.y == PAD_ROW + 1 and cell.x <= hatch + 4:
+		return Block.HULL
+	if cell.y >= PAD_ROW + 2 and cell.x in [-14, -13, -4, -3, 5, 6]:
+		return Block.HULL
+	if cell.y == top and cell.x <= hatch:
+		return Block.HULL
+	if cell.y > top and cell.y < PAD_ROW:
+		if cell.x == left or (cell.x == hatch and cell.y < STATION_HATCH.y):
+			return Block.HULL
+	return Block.EMPTY
+
+
+func station_cabin_sealed() -> bool:
+	var shell := STATION_CABIN.grow(1)
+	for x in range(shell.position.x, shell.end.x):
+		if not _pressure_rated(Vector2i(x, shell.position.y)) or not _pressure_rated(Vector2i(x, shell.end.y - 1)):
+			return false
+	for y in range(STATION_CABIN.position.y, STATION_CABIN.end.y):
+		if not _pressure_rated(Vector2i(shell.position.x, y)):
+			return false
+		if y < STATION_HATCH.y and not _pressure_rated(Vector2i(STATION_HATCH.x, y)):
+			return false
+	return true
+
+
+func station_arrival() -> Vector2:
+	for column in [0, -1, 1, -2, 2, -3, 3, 4, 5, 6]:
+		var x := int(column)
+		if _station_block_at(Vector2i(x, PAD_ROW - 1)) == Block.EMPTY and _station_block_at(Vector2i(x, PAD_ROW - 2)) == Block.EMPTY:
+			var floor_block := _station_block_at(Vector2i(x, PAD_ROW))
+			if floor_block != Block.EMPTY:
+				return Vector2((x + 0.5) * TILE_SIZE, pad_position().y)
+	return pad_position()
+
+
+func _pressure_rated(cell: Vector2i) -> bool:
+	var block := _station_block_at(cell)
+	return block == Block.ALLOY or block == Block.HULL or block == Block.BEACON
+
+
+func _station_block_at(cell: Vector2i) -> int:
+	return edits.get(cell, _base_block(cell, PAD_ROW))
 
 
 func forage_kind(x: int) -> int:

@@ -32,6 +32,8 @@ const PLANTS := ["berry", "bloom", "cap", "fern", "leaf", "moss", "reed", "root"
 const FLUIDS := ["dew pods", "ice buds", "mist nodules", "rain cups", "sap bulbs", "water reeds"]
 const CREATURES := ["drifters", "gliders", "hoppers", "lopers", "runners", "skippers", "wanderers"]
 const CLIMATES := ["Temperate", "Arid", "Frozen", "Humid", "Volcanic", "Highland"]
+const BASE_TEMPERATURES := [19.0, 40.0, -24.0, 29.0, 54.0, 7.0]
+const LEGACY_PRESSURES := [101, 36, 78, 19]
 const FRONTS := [
 	["Rain", "Fog", "Rainstorm"],
 	["Dust storm", "Haze", "Dry wind"],
@@ -52,6 +54,10 @@ var weather_offset: int
 var wind: float
 var food_column: int
 var water_column: int
+var pressure_kpa: int
+var _mean_temperature: float
+var _day_length: float
+var _temperature_swing: float
 
 
 func _init(address: Vector2i, universe_seed: int = 0) -> void:
@@ -70,6 +76,8 @@ func _init(address: Vector2i, universe_seed: int = 0) -> void:
 		weather_offset = 0 if sector == Vector2i.ZERO else seed % 70
 		food_column = -6
 		water_column = 7
+		pressure_kpa = LEGACY_PRESSURES[kind]
+		_mean_temperature = BASE_TEMPERATURES[kind]
 	else:
 		var low := _mix_32(sector.x ^ universe_seed ^ _mix_32(sector.y ^ (universe_seed >> 32)))
 		var high := _mix_32(sector.y ^ (universe_seed >> 32) ^ _mix_32(sector.x ^ universe_seed ^ 0x91b8fcc5))
@@ -92,6 +100,18 @@ func _init(address: Vector2i, universe_seed: int = 0) -> void:
 			"relief": 0.55 + 0.9 * unit(20),
 		}
 
+		# The pressure range is seeded with atmospheric composition. Oxygen-poor
+		# worlds can have thin air or a dense atmosphere that strains a suit.
+		if details.breathable:
+			pressure_kpa = 65 + sample(42) % 91
+		elif sample(44) % 3 == 0:
+			pressure_kpa = 178 + sample(42) % 58
+		else:
+			pressure_kpa = 12 + sample(42) % 76
+		_mean_temperature = BASE_TEMPERATURES[kind] + lerpf(-10.0, 10.0, unit(45))
+
+	_day_length = 170.0 + 140.0 * unit(46)
+	_temperature_swing = lerpf(6.0, 19.0, unit(47))
 	wind = lerpf(48.0, 170.0, unit(21)) * (-1.0 if sample(22) % 2 == 0 else 1.0)
 	details["plant_color"] = Color.from_hsv(unit(23), 0.36 + 0.42 * unit(24), 0.78)
 	details["fruit_color"] = Color.from_hsv(unit(25), 0.5, 0.98)
@@ -127,6 +147,17 @@ func weather_at(elapsed: float) -> String:
 	if phase < start or phase >= start + duration:
 		return ""
 	return fronts[(pat >> 17) % fronts.size()]
+
+
+func temperature_at(elapsed: float, front: String) -> float:
+	var phase := fposmod(elapsed + weather_offset, _day_length) / _day_length
+	var cooling := 0.0
+	match front:
+		"Rain", "Rainstorm", "Fog":
+			cooling = 4.0
+		"Snow", "Whiteout":
+			cooling = 8.0
+	return _mean_temperature + sin(phase * TAU) * _temperature_swing - cooling
 
 
 static func harsh_weather(front: String) -> bool:

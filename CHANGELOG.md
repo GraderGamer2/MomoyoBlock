@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 · 2026-11-22
 
-- Skip empty sky during terrain generation. Apply edits only to modified chunks while reproducing the same generated terrain and station layout.
+- Lowered air consumption in vacuum and the additional cost of severe weather. Reduced health loss on an empty tank.
+- Refit Relay Nine with a pressurized observation cabin, landing pad, workshop, airlock, and exterior EVA deck. Mining the cabin's hull vents it until the breach is repaired.
+- Mining now takes time based on block hardness. Hold on a block within reach to mine it. The targeted block and HUD show progress.
+- Added a workshop at Relay Nine and at planetary landing beacons. Use gathered materials to make a Prospector Pick, spare air canisters, or a pressure liner. Equipment and reserve air persist in saves.
+- Added seeded atmospheric pressure and temperature. Heat raises water use, cold raises food use, and dense atmospheres strain the suit. Solid overhead cover reduces storm exposure.
+- Skip empty sky during terrain generation and apply edits only to modified chunks while reproducing the same generated terrain.
 - Draw precipitation behind solid terrain so rain and snow appear in open space.
+- Update expedition saves automatically. Old station saves reopen on the landing pad and keep their block edits.
 
 ## 0.3.0 · 2026-11-22
 

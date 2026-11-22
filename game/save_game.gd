@@ -4,10 +4,12 @@ extends RefCounted
 const DIRECTORY := "user://saves"
 const DEFAULT_FILE := "expedition.save"
 const SLOT := DIRECTORY + "/" + DEFAULT_FILE
-const FORMAT := 3
+const FORMAT := 4
+const COMPACT_FORMAT := 3
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
+var loaded_format := FORMAT
 var path: String
 
 
@@ -81,8 +83,12 @@ func read() -> Dictionary:
 	if error != OK or not _state_header_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
-	if state.format < FORMAT:
-		state = _migrate(state)
+	loaded_format = state.format
+	if loaded_format < COMPACT_FORMAT:
+		state = _migrate_legacy(state)
+	if not state.is_empty() and loaded_format < FORMAT:
+		state.format = FORMAT
+		state.kit = ExpeditionKit.new().snapshot()
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
@@ -137,7 +143,7 @@ static func _state_header_valid(state: Variant) -> bool:
 	return selected is int and selected >= 0 and selected < inventory.size()
 
 
-static func _migrate(state: Dictionary) -> Dictionary:
+static func _migrate_legacy(state: Dictionary) -> Dictionary:
 	if state.get("world_revision") != BlockWorld.LEGACY_REVISION:
 		return {}
 	var bounds := BlockWorld.LEGACY_SURFACE_BOUNDS if state.region == BlockWorld.Region.SURFACE else BlockWorld.LEGACY_STATION_BOUNDS
@@ -165,7 +171,7 @@ static func _migrate(state: Dictionary) -> Dictionary:
 		if not journal.blocks.is_empty() or not journal.harvested.is_empty():
 			packed[sector] = TerrainJournal.pack(journal.blocks, journal.harvested)
 
-	state.format = FORMAT
+	state.format = COMPACT_FORMAT
 	state.universe_seed = 0
 	state.origin = Vector2i.ZERO
 	state.planets = packed
@@ -189,7 +195,7 @@ static func _state_data_valid(state: Dictionary) -> bool:
 	var planets: Variant = state.get("planets")
 	if not state.get("sector") is Vector2i or not planets is Dictionary:
 		return false
-	if not SurvivalState.valid_snapshot(state.get("vitals")):
+	if not SurvivalState.valid_snapshot(state.get("vitals")) or not ExpeditionKit.valid_snapshot(state.get("kit")):
 		return false
 	var station: Variant = state.get("station")
 	if not station is PackedByteArray or TerrainJournal.unpack(station, false).is_empty():

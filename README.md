@@ -11,7 +11,7 @@ tar -xzf MomoyoBlock-linux-x86_64.tar.gz -C "$HOME"
 "$HOME/.MomoyoBlock/MomoyoBlock"
 ```
 
-Re-extracting the archive updates the game. Expeditions live under `~/.MomoyoBlock/profile/saves/`. Existing 0.1 and 0.2 expeditions keep their original planets. Choose **New expedition** from the main menu for a randomly generated starting planet in a separate save. **Continue expedition** opens the most recently saved slot, and **Load expedition** lets you pick another. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
+Re-extracting the archive updates the game. Expeditions live under `~/.MomoyoBlock/profile/saves/`. Existing expeditions keep their planets and block edits. Expeditions saved on Relay Nine before 0.4 resume at the landing pad. Choose **New expedition** from the main menu for a randomly generated starting planet in a separate save. **Continue expedition** opens the most recently saved slot, and **Load expedition** lets you pick another. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
 
 The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize.
 
@@ -21,17 +21,23 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 |---|---|
 | A / D or ← / → | Walk |
 | Space | Jump |
-| Left click | Mine a block in reach |
+| Hold left click | Mine a block in reach |
 | Right click | Place the selected block |
 | 1–4 | Select a building material |
 | F | Gather the nearest food or water source in reach |
 | R / T | Eat a ration or drink water |
+| C near a planetary beacon or the Relay Nine workbench | Open the workshop |
+| O | Use a spare air canister |
 | E at a beacon | Travel between the current planet and Relay Nine |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
-Mine, build, and gather within two tiles of your explorer. Planets generate nearby terrain as you walk or dig. The HUD shows current weather and the direction back to the beacon. Oxygen replenishes in breathable air and near a landing beacon. Vacuum and unbreathable atmospheres drain the tank. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
+Mine, build, and gather within two tiles of your explorer. Softer blocks are quicker to mine. Keep the pointer on the block while holding the button. Use the workshop to turn stone, ore, and alloy into a Prospector Pick for faster mining of hard blocks, air canisters for a quick top-up, or a pressure liner for dense atmospheres.
+
+Planets generate nearby terrain as you walk or dig. The HUD shows current weather, temperature, pressure, and the direction back to the beacon. Heat raises water use, cold raises food use, and pressure above 175 kPa strains the suit. Overhead cover reduces exposure to harsh weather.
+
+Oxygen replenishes in breathable air, near a landing beacon, and inside Relay Nine's sealed cabin. The exterior deck is exposed to vacuum. If a breach vents the cabin, patch it with alloy. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
 
 The star chart uses signed 32-bit coordinates per axis. A saved galaxy seed and generation revision reproduce each planet's name, terrain, and environmental properties. Saves store compact block and harvest changes for modified planets. They load full terrain for the nearby chunks during play.
 
@@ -55,6 +61,6 @@ Use `tools/run-dev.sh` to play from source. Development uses `~/.MomoyoBlock/dev
 
 Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, curl, unzip, and patch. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. The workflow can reuse the optimized template when the engine inputs and toolchain match. It runs the gameplay tests and embeds the current game in each build. The workflow also runs `tools/test-package.sh` with Weston and software graphics to verify that the Linux export creates a native Wayland window and presents frames.
 
-The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Run the workflow on demand after gameplay changes. Updating its definition on `main` also starts a build.
+The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Updates to `project.godot` or the workflow definition on `main` automatically build a playtest. The workflow can also run on demand.
 
 [Godot Linux build guide](https://docs.godotengine.org/en/4.7/engine_details/development/compiling/compiling_for_linuxbsd.html) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)

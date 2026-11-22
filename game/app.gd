@@ -1,7 +1,7 @@
 class_name MomoyoApp
 extends Node
 
-enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD }
+enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD, WORKSHOP }
 
 const EXPEDITION := preload("res://game/main.tscn")
 
@@ -37,7 +37,7 @@ func _input(event: InputEvent) -> void:
 	match screen:
 		Screen.EXPLORING:
 			show_pause()
-		Screen.PAUSED, Screen.STAR_CHART:
+		Screen.PAUSED, Screen.STAR_CHART, Screen.WORKSHOP:
 			resume_expedition()
 		Screen.SETTINGS:
 			_leave_settings()
@@ -83,6 +83,7 @@ func start_expedition(filename := ExpeditionSave.DEFAULT_FILE) -> void:
 	game.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(game)
 	game.chart_requested.connect(show_chart)
+	game.workshop_requested.connect(show_workshop)
 	resume_expedition()
 
 
@@ -224,6 +225,41 @@ func _leave_settings() -> void:
 		show_title()
 
 
+func show_workshop() -> void:
+	if game == null or not game.can_craft_here():
+		return
+	screen = Screen.WORKSHOP
+	get_tree().paused = true
+	var caption := "Beacon workbench" if game.region == BlockWorld.Region.SURFACE else "Relay Nine workshop"
+	var body := _ui.open_panel(caption, "Craft equipment for the expedition.")
+	for recipe in ExpeditionKit.RECIPES.size():
+		var data: Dictionary = ExpeditionKit.RECIPES[recipe]
+		body.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
+		var entry := "%s  ·  %s" % [data.name, ExpeditionKit.cost_text(recipe)]
+		if recipe == ExpeditionKit.Recipe.PICK and game.kit.pick or recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
+			entry = "%s  ·  Equipped" % data.name
+		if recipe == ExpeditionKit.Recipe.CANISTER:
+			entry += "  ·  %d/%d" % [game.kit.canisters, ExpeditionKit.MAX_CANISTERS]
+		var craft_button := _ui.button(entry, _craft.bind(recipe))
+		craft_button.disabled = not game.kit.available(recipe, game.inventory)
+		body.add_child(craft_button)
+	var supplies := PackedStringArray()
+	for i in game.inventory.size():
+		supplies.append("%d %s" % [game.inventory[i], BlockWorld.MATERIAL_NAMES[i].to_lower()])
+	body.add_child(_ui.label("Carried  " + "  ·  ".join(supplies), 13, ShellUI.MINT))
+	var back := _ui.button("Back to expedition", resume_expedition, true)
+	body.add_child(back)
+	_ui.finish_panel(back)
+
+
+func _craft(recipe: int) -> void:
+	if game.craft(recipe):
+		show_workshop()
+		_ui.show_feedback("Crafted %s" % ExpeditionKit.RECIPES[recipe].name)
+	else:
+		_ui.show_feedback("The recipe is unavailable.")
+
+
 func show_chart() -> void:
 	if game == null or not game.can_choose_planet():
 		return
@@ -264,8 +300,13 @@ func _refresh_chart(column: SpinBox, row: SpinBox, preview: Label, detail: Label
 	var destination := PlanetProfile.new(Vector2i(int(column.value), int(row.value)), game.universe_seed)
 	preview.text = destination.chart_title()
 	var air := "Breathable" if destination.details.breathable else "Suit oxygen required"
-	detail.text = "%s  ·  %s  ·  %s\nForage: %s and %s  ·  %s" % [
-		destination.details.biome, air, game.weather_forecast(destination),
+	var front := destination.weather_at(game.survival.elapsed)
+	var pressure := "%d kPa" % destination.pressure_kpa
+	if destination.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT:
+		pressure += " · Suit strain"
+	detail.text = "%s  ·  %s  ·  %s\n%s  ·  %d °C\nForage: %s and %s  ·  %s" % [
+		destination.details.biome, air, "Clear now" if front.is_empty() else front, pressure,
+		roundi(destination.temperature_at(game.survival.elapsed, front)),
 		destination.details.flora, destination.details.water, destination.details.fauna,
 	]
 

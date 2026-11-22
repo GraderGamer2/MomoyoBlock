@@ -13,6 +13,9 @@ var _location: Label
 var _status: Label
 var _travel: Label
 var _environment: Label
+var _atmosphere: Label
+var _workshop: Label
+var _mining: Label
 var _weather: Label
 var _status_timeout: Timer
 var _supplies: Label
@@ -46,6 +49,9 @@ func _ready() -> void:
 	_status = _label("", 13, GREEN)
 	_status.hide()
 	heading.add_child(_status)
+	_mining = _label("", 13, AMBER)
+	_mining.hide()
+	heading.add_child(_mining)
 	_status_timeout = Timer.new()
 	_status_timeout.one_shot = true
 	_status_timeout.wait_time = 4.0
@@ -68,6 +74,9 @@ func _ready() -> void:
 	readings.add_child(_weather)
 	_environment = _label("", 12, MUTED)
 	readings.add_child(_environment)
+	_atmosphere = _label("", 12, MUTED)
+	_atmosphere.name = "LocalAtmosphere"
+	readings.add_child(_atmosphere)
 	var names := ["Health", "Hunger", "Thirst", "Oxygen"]
 	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf")]
 	for i in names.size():
@@ -95,14 +104,19 @@ func _ready() -> void:
 	_supplies = _label("", 13, GREEN)
 	readings.add_child(_supplies)
 
-	var legend := _label("A / D Move     Space Jump\nLeft click Mine     Right click Build\nReach: 2 tiles     F Gather     R Eat     T Drink\nF5 Save     Esc Pause", 13, PAPER)
+	var legend := _label("A / D Move     Space Jump\nHold left Mine     Right click Build\nF Gather     R Eat     T Drink\nC Craft     O Use air     F5 Save     Esc Pause", 13, PAPER)
 	var controls := _panel()
 	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -120), Vector2(26, -20))
 	controls.add_child(legend)
 
 	var bar := VBoxContainer.new()
+	bar.alignment = BoxContainer.ALIGNMENT_END
 	bar.add_theme_constant_override("separation", 6)
-	_anchor(screen, bar, Control.PRESET_CENTER_BOTTOM, Vector2(-228, -108), Vector2(228, -20))
+	_anchor(screen, bar, Control.PRESET_CENTER_BOTTOM, Vector2(-228, -138), Vector2(228, -20))
+	_workshop = _label("", 14, GREEN)
+	_workshop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_workshop.hide()
+	bar.add_child(_workshop)
 	_travel = _label("", 16, AMBER)
 	_travel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bar.add_child(_travel)
@@ -163,6 +177,21 @@ func show_travel(region: int, nearby: bool, planet_name: String, direction: Vect
 		_travel.text = prompt
 
 
+func show_mining(material: String, seconds: float) -> void:
+	_mining.text = "%s  ·  %.2f s" % [material, seconds]
+	_mining.show()
+
+
+func hide_mining() -> void:
+	_mining.hide()
+
+
+func show_workshop(nearby: bool, region: int) -> void:
+	_workshop.visible = nearby
+	if nearby:
+		_workshop.text = "C  Beacon workbench" if region == BlockWorld.Region.SURFACE else "C  Relay Nine workshop"
+
+
 func show_status(message: String, saved: bool = true) -> void:
 	_status.text = message
 	_status.visible = not message.is_empty()
@@ -214,14 +243,15 @@ static func _style(border: Color) -> StyleBoxFlat:
 	style.content_margin_bottom = 7
 	return style
 
-func show_survival(state: SurvivalState, air: String, weather: String) -> void:
+func show_survival(state: SurvivalState, kit: ExpeditionKit, air: String, weather: String,
+		atmosphere: String, pressure_warning: bool) -> void:
 	var levels := [state.health, state.hunger, state.thirst, state.oxygen]
 	for i in _meters.size():
 		_meters[i].value = levels[i]
 		var value := str(ceili(levels[i]))
 		if _meter_values[i].text != value:
 			_meter_values[i].text = value
-	var supplies := "Rations %d  ·  Water %d" % [state.food, state.water]
+	var supplies := "Rations %d  ·  Water %d  ·  Air %d" % [state.food, state.water, kit.canisters]
 	if _supplies.text != supplies:
 		_supplies.text = supplies
 	var conditions := "Weather: %s" % weather if weather != "Orbit" else "Orbit"
@@ -230,6 +260,9 @@ func show_survival(state: SurvivalState, air: String, weather: String) -> void:
 		_weather.modulate = Color("#f4bb87") if PlanetProfile.harsh_weather(weather) else Color.WHITE
 	if _environment.text != air:
 		_environment.text = air
+	if _atmosphere.text != atmosphere:
+		_atmosphere.text = atmosphere
+	_atmosphere.modulate = AMBER if pressure_warning else Color.WHITE
 
 
 static func _meter_style(fill: Color) -> StyleBoxFlat:

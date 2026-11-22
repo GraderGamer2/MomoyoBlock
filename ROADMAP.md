@@ -14,10 +14,16 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Track conditions, air, and the route back to your beacon in the HUD. Mine, build, and gather within two tiles.
 - Save each expedition’s seed and generator revision, plus terrain edits and harvested forage. Regions you visit without making changes need no terrain entries. Existing saves retain their previous galaxy and terrain.
 
-## Next · Tools, recipes, and habitats
+## 0.4 · Relay Nine and survival equipment
 
-- Add a crafting inventory and a workbench. Start with recipes for tools, storage, and a portable source of oxygen. Tie recipes to supplies gathered from different environments.
-- Build sealed rooms and airlocks, add equipment for power and oxygen, and make habitats useful away from the beacons.
+- Mine blocks with visible progress and time scaled to hardness. Gather materials for a pick, reserve air, and pressure protection.
+- Refit Relay Nine with a workshop and a pressurized cabin that can vent and be repaired. Use the exterior deck to build in vacuum.
+- Show atmospheric pressure and temperature on the HUD and star chart. Prepare for hot, cold, and high-pressure worlds with supplies and suit equipment.
+
+## Next · Habitats, storage, and ecology
+
+- Let players build sealed rooms and airlocks. Add power and oxygen equipment so habitats can support long expeditions away from the beacons.
+- Expand the workshop with material storage and recipes that use resources from different environments.
 - Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
 
 ## Later · Vehicles and shipbuilding

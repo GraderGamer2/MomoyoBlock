@@ -55,13 +55,21 @@ func _run() -> void:
 	var surface_block := Vector2i(2, BlockWorld.PAD_ROW)
 	var above_surface := surface_block + Vector2i.UP
 	var soil := game.inventory[0]
-	_expect(not game.mine(Vector2i(0, BlockWorld.PAD_ROW)), "Beacon pad is protected")
+	_expect(not game.begin_mining(Vector2i(0, BlockWorld.PAD_ROW)), "Beacon pad is protected")
 	_expect(not game.place(BlockWorld.cell_at(game.explorer.position)), "Placement avoids the explorer")
-	_expect(not game.mine(surface_block), "Mining cannot reach a tile center more than two tiles away")
+	_expect(not game.begin_mining(surface_block), "Mining cannot reach a tile center more than two tiles away")
 	_expect(not game.place(Vector2i(3, BlockWorld.PAD_ROW - 1)), "Placement has the same short range")
 	game.explorer.position.x = 35.0
-	_expect(game.mine(surface_block) and game.inventory[0] == soil + 1, "Nearby mining pays out soil once")
-	_expect(not game.mine(surface_block), "An empty cell cannot be mined")
+	_expect(game.begin_mining(surface_block), "Nearby grass can be targeted")
+	_expect(not game.advance_mining(0.18, surface_block, true) and game.inventory[0] == soil,
+			"Mining for less than the hardness leaves the block and inventory unchanged")
+	_expect(not game.advance_mining(1.0, surface_block, false), "Releasing the button cancels mining")
+	_expect(game.begin_mining(surface_block) and not game.advance_mining(0.18, surface_block, true),
+			"Returning to a cancelled block starts from zero")
+	_expect(game.advance_mining(0.15, surface_block, true) and game.inventory[0] == soil + 1,
+			"A completed hold breaks the block and pays out soil once")
+	_expect(not game.advance_mining(4.0, surface_block, true) and not game.begin_mining(surface_block),
+			"Continued holding cannot mine the empty cell twice")
 	_expect(game.place(above_surface) and game.inventory[0] == soil, "Placement consumes one block")
 	_expect(not game.place(Vector2i(40, 7)), "Placement respects reach")
 
@@ -76,6 +84,10 @@ func _run() -> void:
 	await _frames(90)
 	_expect(game.region == BlockWorld.Region.STATION, "Travel reaches the orbital station")
 	game.selected = 2
+	await _check_station(game)
+	game.explorer.position = BlockWorld.pad_position()
+	game.explorer.velocity = Vector2.ZERO
+	await _frames(6)
 	var station_block := Vector2i(-1, BlockWorld.PAD_ROW - 2)
 	var alloy := game.inventory[2]
 	_expect(game.place(station_block), "The orbital station accepts building")
@@ -91,6 +103,7 @@ func _run() -> void:
 	await _frames(5)
 	_expect(game.region == BlockWorld.Region.SURFACE, "Reopening restores the last region")
 	_expect(game.inventory[2] == alloy - 1 and game.selected == 2, "Reopening restores inventory and selection")
+	_expect(game.kit.pick and game.kit.liner and game.kit.canisters == 1, "Reopening restores crafted equipment")
 	_expect(game.terrain.block_at(surface_block) == BlockWorld.Block.EMPTY, "Reopening restores the mined block")
 	_expect(game.station.edits.get(station_block) == BlockWorld.Block.ALLOY,
 			"Reopening restores the inactive station edits")
@@ -98,9 +111,13 @@ func _run() -> void:
 	_expect(game.begin_travel(), "The station can be reached again")
 	await _frames(90)
 	game.explorer.position.x += 115.0
+	game.survival.oxygen = 65.0
+	await _frames(32)
+	_expect(game.survival.oxygen > 65.0, "The sealed cabin refills oxygen away from the beacon")
+	game.explorer.position.x = BlockWorld.TILE_SIZE * 14.5
 	var before := game.survival.oxygen
 	await _frames(32)
-	_expect(game.survival.oxygen < before, "Oxygen drains away from the station beacon")
+	_expect(game.survival.oxygen < before, "The EVA deck uses suit oxygen")
 	game.explorer.position = BlockWorld.pad_position()
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.land_at(Vector2i.RIGHT), "The star chart accepts a different sector at the beacon")
@@ -173,6 +190,10 @@ func _check_menu() -> void:
 	var first_title := app.game.surface.planet.title()
 	_expect(first_seed != 0 and first_title != "Cinder Reach", "A new expedition starts on a seeded planet with a generated name")
 	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The starting seed is saved immediately")
+	app.show_workshop()
+	_expect(app.screen == MomoyoApp.Screen.WORKSHOP and get_tree().paused,
+			"The landing beacon opens a workshop menu")
+	app.resume_expedition()
 	app.game.survival.hunger = 88.0
 	app.show_pause()
 	await _frames(30)
@@ -199,19 +220,62 @@ func _check_menu() -> void:
 func _check_survival_model() -> void:
 	var suit := SurvivalState.new()
 	suit.advance(10.0, false, false)
-	_expect(suit.oxygen < 90.0 and suit.hunger < 100.0 and suit.thirst < 100.0, "Survival vitals deplete in vacuum")
+	_expect(is_equal_approx(suit.oxygen, 89.0) and suit.hunger < 100.0 and suit.thirst < 100.0,
+			"Suit oxygen drains at the gentler vacuum rate")
 	_expect(suit.eat() and suit.drink() and suit.hunger == 100.0 and suit.thirst == 100.0, "Food and drinking water restore vitals")
 	suit.oxygen = 0
 	suit.advance(1.0, false, true)
-	_expect(suit.health < 100.0, "Empty oxygen causes damage")
+	_expect(is_equal_approx(suit.health, 96.0), "Empty oxygen uses the lower health penalty")
 	suit.advance(7.0, true, false)
 	_expect(suit.oxygen == 100.0, "Breathable air replenishes the suit")
+	var exposed := SurvivalState.new()
+	var protected := SurvivalState.new()
+	exposed.advance(10.0, false, false, 226, 56.0)
+	protected.advance(10.0, false, false, 226, 56.0, true)
+	_expect(exposed.health < protected.health and protected.health < 100.0 and exposed.thirst < suit.thirst,
+			"Dense air causes suit strain, heat increases thirst, and the liner reduces pressure damage")
+	var gear := ExpeditionKit.new()
+	gear.canisters = 1
+	suit.oxygen = 22.0
+	_expect(gear.use_canister(suit) and suit.oxygen == 67.0 and gear.canisters == 0,
+			"A spare canister restores 45 oxygen and is consumed")
+	_expect(BlockWorld.mining_time(BlockWorld.Block.HULL, false) > BlockWorld.mining_time(BlockWorld.Block.STONE, false) and
+			BlockWorld.mining_time(BlockWorld.Block.STONE, true) < BlockWorld.mining_time(BlockWorld.Block.STONE, false),
+			"Block hardness differs and the pick speeds up solid material")
 	var origin := PlanetProfile.new(Vector2i.ZERO)
 	_expect(origin.weather_at(12.0).is_empty() and origin.weather_at(55.0) == "Rain", "Planet weather moves through a cycle")
 	var address := Vector2i(-2147483648, 2147483647)
 	var first := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	var second := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	_expect(first.make_chunk(Vector2i.ZERO) == second.make_chunk(Vector2i.ZERO), "Distant addresses reproduce the same terrain")
+
+
+func _check_station(game: MomoyoGame) -> void:
+	_expect(game.station.station_cabin_sealed(), "The refit begins with a sealed cabin")
+	var wall := Vector2i(BlockWorld.STATION_CABIN.position.x - 1, BlockWorld.PAD_ROW - 1)
+	game.explorer.position = game.terrain.scene_point(wall + Vector2i.RIGHT, ActiveTerrain.CELL_CENTER)
+	game.explorer.velocity = Vector2.ZERO
+	await _frames(5)
+	_expect(game.breathable_here(), "A player away from the beacon can breathe in the cabin")
+	_expect(game.begin_mining(wall), "A hull block can be targeted up close")
+	_expect(not game.advance_mining(1.0, wall, true), "The hull takes longer to break than grass")
+	_expect(not game.advance_mining(3.0, wall + Vector2i.UP, true), "Switching targets cancels mining")
+	_expect(game.begin_mining(wall) and game.advance_mining(2.2, wall, true), "Holding breaks a hull block at its hardness threshold")
+	_expect(not game.breathable_here() and not game.station.station_cabin_sealed(), "A hull breach vents the cabin")
+	_expect(game.place(wall) and game.breathable_here(), "An alloy patch restores the cabin")
+
+	game.explorer.position = game.terrain.scene_point(BlockWorld.STATION_WORKBENCH, ActiveTerrain.CELL_CENTER)
+	game.explorer.velocity = Vector2.ZERO
+	await _frames(5)
+	var before := game.inventory.duplicate()
+	_expect(game.can_craft_here() and game.craft(ExpeditionKit.Recipe.PICK), "The workbench crafts a pick")
+	_expect(game.inventory[1] == before[1] - 4 and game.inventory[2] == before[2] - 2,
+			"Crafting deducts the listed materials")
+	_expect(not game.craft(ExpeditionKit.Recipe.PICK), "An equipped pick cannot cost resources again")
+	game.inventory[3] += 3
+	_expect(game.craft(ExpeditionKit.Recipe.CANISTER) and game.craft(ExpeditionKit.Recipe.LINER), "Craftable air and pressure gear are available")
+	_expect(not game.use_air_canister(), "A full oxygen tank does not waste a canister")
+	_expect(game.kit.canisters == 1, "The first canister remains available for a later sortie")
 
 
 func _check_weather(game: MomoyoGame) -> void:
@@ -279,12 +343,21 @@ func _check_previous_format() -> void:
 	})
 	old.close()
 	var migrated := ExpeditionSave.new().read()
-	_expect(migrated.get("sector") == sector and migrated.get("universe_seed") == 0,
+	_expect(migrated.get("sector") == sector and migrated.get("universe_seed") == 0 and
+			migrated.get("kit", {}) == ExpeditionKit.new().snapshot(),
 			"A 0.2 expedition keeps its original galaxy and destination")
 	if not migrated.is_empty():
 		var journal := TerrainJournal.unpack(migrated.planets[sector], true)
 		_expect(journal.blocks.get(edit) == BlockWorld.Block.EMPTY and journal.harvested.has(7),
 				"0.2 building and forage data migrate into compact journals")
+		migrated.format = 3
+		migrated.erase("kit")
+		_expect(ExpeditionSave.new().write(migrated) == OK, "A 0.3 fixture can be written")
+		var previous := ExpeditionSave.new()
+		var updated := previous.read()
+		_expect(previous.loaded_format == 3 and updated.get("sector") == sector and
+				updated.get("kit", {}) == ExpeditionKit.new().snapshot(),
+				"0.3 compact terrain is preserved while gear migrates")
 
 
 func _check_journal() -> void:
