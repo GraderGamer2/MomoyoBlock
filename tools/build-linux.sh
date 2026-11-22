@@ -84,5 +84,4 @@ cp "$source_dir/LICENSE.txt" "$stage/.MomoyoBlock/licenses/Godot-LICENSE.txt"
 cp "$source_dir/COPYRIGHT.txt" "$stage/.MomoyoBlock/licenses/Godot-COPYRIGHT.txt"
 test -x "$stage/.MomoyoBlock/MomoyoBlock"
 tar -czf "$archive" -C "$stage" .MomoyoBlock
-tools/test-package.sh "$archive"
 printf 'Built %s\n' "$archive"

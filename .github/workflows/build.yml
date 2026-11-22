@@ -21,9 +21,11 @@ jobs:
       - name: Install build and display tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends scons libwayland-bin libgl1-mesa-dri weston xvfb xauth xdotool
+          sudo apt-get install -y --no-install-recommends scons libwayland-bin libwayland-egl1 libgl1-mesa-dri libegl-mesa0 weston
       - name: Test, build, and package Linux
         run: tools/build-linux.sh
+      - name: Verify packaged Wayland window
+        run: tools/test-package.sh dist/MomoyoBlock-linux-x86_64.tar.gz
       - name: Upload Linux playtest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

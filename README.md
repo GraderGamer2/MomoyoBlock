@@ -51,7 +51,7 @@ Use `tools/run-dev.sh` to play from source. Development uses `~/.MomoyoBlock/dev
 
 ## Build a playtest
 
-Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, Weston, Xvfb, xauth, xdotool, curl, unzip, patch, and binutils. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. It embeds the game and tests the resulting executable as a Wayland client in a nested compositor.
+Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, curl, unzip, and patch. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. It embeds the game. The workflow also runs `tools/test-package.sh` with Weston and software graphics to verify that the Linux export creates a native Wayland window and presents frames.
 
 The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Run the workflow on demand after gameplay changes. Updating its definition on `main` also starts a build.
 

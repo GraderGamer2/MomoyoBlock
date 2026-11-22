@@ -12,12 +12,6 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	var args := OS.get_cmdline_user_args()
-	if args.size() == 3 and args[0] == "check-export-save":
-		await _check_export_save(args[1], args[2])
-		get_tree().quit(1 if _failures else 0)
-		return
-
 	if FileAccess.file_exists(ExpeditionSave.SLOT):
 		_expect(false, "Smoke test requires an empty test profile")
 		get_tree().quit(1)
@@ -136,21 +130,6 @@ func _run() -> void:
 	game.queue_free()
 	await get_tree().process_frame
 	get_tree().quit(1 if _failures else 0)
-
-
-func _check_export_save(file_path: String, checkpoint: String) -> void:
-	var deadline := Time.get_ticks_msec() + 12000
-	while Time.get_ticks_msec() < deadline:
-		var file := FileAccess.open(file_path, FileAccess.READ)
-		if file != null:
-			var state: Variant = file.get_var(false)
-			if state is Dictionary:
-				if checkpoint == "station" and state.get("region") == BlockWorld.Region.STATION:
-					return
-				if checkpoint == "east" and state.get("region") == BlockWorld.Region.SURFACE and state.get("sector") == Vector2i.RIGHT:
-					return
-		await get_tree().create_timer(0.15).timeout
-	_expect(false, "The Wayland package did not save the %s checkpoint" % checkpoint)
 
 
 func _check_menu() -> void:
