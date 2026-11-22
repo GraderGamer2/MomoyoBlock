@@ -33,7 +33,7 @@ var _tick_progress := 0.0
 @onready var _wildlife: SurfaceWildlife = $Wildlife
 @onready var _sky: Horizon = $Backdrop/Sky
 @onready var _beacon: Node2D = $Beacon
-@onready var _weather: WeatherLayer = $Weather/Front
+@onready var _weather: WeatherLayer = $Backdrop/Front
 @onready var _hud: FlightHUD = $HUD
 
 
@@ -64,8 +64,8 @@ func _ready() -> void:
 		_hud.show_status("Existing save could not be loaded. It has been kept.", false)
 	_open_region(region, point, origin)
 	_hud.show_inventory(inventory, selected)
-	if state.is_empty() and _save.read_error == OK:
-		save_expedition(false)
+	if state.is_empty() and _save.read_error == OK and not save_expedition(false):
+		_hud.show_status("Could not save the new expedition. Press F5 to retry.", false)
 
 
 func _physics_process(delta: float) -> void:

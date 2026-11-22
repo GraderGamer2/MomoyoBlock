@@ -12,6 +12,7 @@ const LEGACY_REVISION := 1
 const WORLD_REVISION := 2
 const LEGACY_SURFACE_BOUNDS := Rect2i(-192, -32, 384, 128)
 const LEGACY_STATION_BOUNDS := Rect2i(-96, -24, 192, 80)
+const STATION_HULL := Rect2i(-13, PAD_ROW - 7, 27, 9)
 const STATION_RESCUE_ROW := 56
 const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block.ORE]
 const MATERIAL_NAMES: Array[String] = ["Soil", "Stone", "Alloy", "Ore"]
@@ -27,6 +28,7 @@ var harvested: Dictionary[int, bool] = {}
 var journal_dirty := false
 var planet: PlanetProfile
 
+var _edited_chunks: Dictionary[Vector2i, int] = {}
 var _salt: int
 var _soil := Block.SOIL
 var _rock := Block.STONE
@@ -68,25 +70,47 @@ func make_chunk(chunk: Vector2i) -> PackedByteArray:
 	var cells := PackedByteArray()
 	cells.resize(CHUNK_SIZE * CHUNK_SIZE)
 	var origin := chunk * CHUNK_SIZE
-	for col in CHUNK_SIZE:
-		var x := origin.x + col
-		var ground := surface_row(x) if region == Region.SURFACE else PAD_ROW
+	if region == Region.SURFACE:
+		for col in CHUNK_SIZE:
+			var x := origin.x + col
+			var ground := surface_row(x)
+			for row in range(maxi(0, ground - origin.y), CHUNK_SIZE):
+				cells[row * CHUNK_SIZE + col] = _base_block(Vector2i(x, origin.y + row), ground)
+	else:
+		var hull := STATION_HULL.intersection(Rect2i(origin, Vector2i.ONE * CHUNK_SIZE))
+		for y in range(hull.position.y, hull.end.y):
+			for x in range(hull.position.x, hull.end.x):
+				var index := (y - origin.y) * CHUNK_SIZE + x - origin.x
+				cells[index] = _base_block(Vector2i(x, y), PAD_ROW)
+
+	if _edited_chunks.has(chunk):
 		for row in CHUNK_SIZE:
-			var cell := Vector2i(x, origin.y + row)
-			var material: int = edits.get(cell, -1)
-			if material == -1:
-				material = _base_block(cell, ground)
-			cells[row * CHUNK_SIZE + col] = material
+			for col in CHUNK_SIZE:
+				var index := row * CHUNK_SIZE + col
+				cells[index] = edits.get(origin + Vector2i(col, row), cells[index])
 	return cells
 
 
 func record_edit(cell: Vector2i, material: int) -> void:
+	var chunk := chunk_at(cell)
 	var ground := surface_row(cell.x) if region == Region.SURFACE else PAD_ROW
 	if material == _base_block(cell, ground):
-		edits.erase(cell)
+		if not edits.erase(cell):
+			return
+		var remaining := _edited_chunks[chunk] - 1
+		if remaining == 0:
+			_edited_chunks.erase(chunk)
+		else:
+			_edited_chunks[chunk] = remaining
 	else:
+		if not edits.has(cell):
+			_count_edit(chunk)
 		edits[cell] = material
 	journal_dirty = true
+
+
+func _count_edit(chunk: Vector2i) -> void:
+	_edited_chunks[chunk] = _edited_chunks.get(chunk, 0) + 1
 
 
 func record_harvest(column: int) -> void:
@@ -97,6 +121,9 @@ func record_harvest(column: int) -> void:
 func restore_journal(data: Dictionary) -> void:
 	edits.assign(data.get("blocks", {}))
 	harvested.assign(data.get("harvested", {}))
+	_edited_chunks.clear()
+	for cell in edits:
+		_count_edit(chunk_at(cell))
 	journal_dirty = false
 
 

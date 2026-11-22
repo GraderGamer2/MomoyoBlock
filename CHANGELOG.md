@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Skip empty sky during terrain generation. Apply edits only to modified chunks while reproducing the same generated terrain and station layout.
+- Draw precipitation behind solid terrain so rain and snow appear in open space.
+
 ## 0.3.0 · 2026-11-22
 
 - Removed the original planet edges and underground floor. Nearby chunks stream around the explorer with stable local physics far from spawn.

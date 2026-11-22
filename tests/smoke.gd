@@ -216,7 +216,7 @@ func _check_survival_model() -> void:
 
 func _check_weather(game: MomoyoGame) -> void:
 	var weather := game.find_child("CurrentWeather", true, false) as Label
-	var precipitation := game.get_node("Weather/Front") as WeatherLayer
+	var precipitation := game.get_node("Backdrop/Front") as WeatherLayer
 	game.survival.elapsed = 46.93
 	await _frames(18)
 	_expect(weather.text == "Weather: Rain" and precipitation.visible, "Rain and the HUD switch on together")
@@ -298,6 +298,19 @@ func _check_journal() -> void:
 	_expect(packet.size() < 4000 and journal.get("blocks") == edits and journal.get("harvested") == harvests,
 			"An edited region compresses and restores every cell and harvest")
 	_expect(TerrainJournal.unpack(packet, false).is_empty(), "Station journals do not contain surface harvests")
+	var world := BlockWorld.new(BlockWorld.Region.STATION)
+	var station_extension := Vector2i(-93, -34)
+	var chunk := BlockWorld.chunk_at(station_extension)
+	var local := station_extension - chunk * BlockWorld.CHUNK_SIZE
+	var index := local.y * BlockWorld.CHUNK_SIZE + local.x
+	world.restore_journal({"blocks": {station_extension: BlockWorld.Block.ALLOY}})
+	_expect(world.make_chunk(chunk)[index] == BlockWorld.Block.ALLOY,
+			"An otherwise empty orbit chunk regenerates a saved extension")
+	world.record_edit(station_extension, BlockWorld.Block.EMPTY)
+	_expect(world.make_chunk(chunk)[index] == BlockWorld.Block.EMPTY and world.edits.is_empty(),
+			"Removing the last edit restores a blank chunk")
+	world.record_edit(station_extension, BlockWorld.Block.STONE)
+	_expect(world.make_chunk(chunk)[index] == BlockWorld.Block.STONE, "A new edit is tracked after a chunk reverts")
 	var first := PlanetProfile.new(Vector2i(18, -23), 112334)
 	var repeat := PlanetProfile.new(Vector2i(18, -23), 112334)
 	var different := PlanetProfile.new(Vector2i(18, -23), 471104)
