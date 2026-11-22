@@ -21,6 +21,8 @@ var _status_timeout: Timer
 var _supplies: Label
 var _meters: Array[ProgressBar] = []
 var _meter_values: Array[Label] = []
+var _body_temperature: Label
+var _temperature_gauge: TemperatureGauge
 var _transit_title: Label
 var _transit_route: Label
 var _slot_panels: Array[PanelContainer] = []
@@ -101,6 +103,30 @@ func _ready() -> void:
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(value)
 		_meter_values.append(value)
+
+	var temperature := HBoxContainer.new()
+	temperature.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	readings.add_child(temperature)
+	var temperature_label := _label("Body temp", 13, PAPER)
+	temperature_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	temperature.add_child(temperature_label)
+	_body_temperature = _label("", 12, PAPER)
+	_body_temperature.name = "BodyTemperature"
+	_body_temperature.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	temperature.add_child(_body_temperature)
+
+	var scale_row := HBoxContainer.new()
+	scale_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	readings.add_child(scale_row)
+	scale_row.add_child(_label("Cold", 11, TemperatureGauge.COLD))
+	_temperature_gauge = TemperatureGauge.new()
+	_temperature_gauge.custom_minimum_size = Vector2(98.0, 12.0)
+	_temperature_gauge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_temperature_gauge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_temperature_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scale_row.add_child(_temperature_gauge)
+	scale_row.add_child(_label("Hot", 11, TemperatureGauge.HOT))
+
 	_supplies = _label("", 13, GREEN)
 	readings.add_child(_supplies)
 
@@ -244,13 +270,14 @@ static func _style(border: Color) -> StyleBoxFlat:
 	return style
 
 func show_survival(state: SurvivalState, kit: ExpeditionKit, air: String, weather: String,
-		atmosphere: String, pressure_warning: bool) -> void:
+		atmosphere: String, pressure_warning: bool, temperature_target: float) -> void:
 	var levels := [state.health, state.hunger, state.thirst, state.oxygen]
 	for i in _meters.size():
 		_meters[i].value = levels[i]
 		var value := str(ceili(levels[i]))
 		if _meter_values[i].text != value:
 			_meter_values[i].text = value
+	_show_body_temperature(state.body_temperature, temperature_target)
 	var supplies := "Rations %d  ·  Water %d  ·  Air %d" % [state.food, state.water, kit.canisters]
 	if _supplies.text != supplies:
 		_supplies.text = supplies
@@ -263,6 +290,29 @@ func show_survival(state: SurvivalState, kit: ExpeditionKit, air: String, weathe
 	if _atmosphere.text != atmosphere:
 		_atmosphere.text = atmosphere
 	_atmosphere.modulate = AMBER if pressure_warning else Color.WHITE
+
+
+func _show_body_temperature(value: float, target: float) -> void:
+	_temperature_gauge.show_temperature(value)
+	var reading := "%.1f °C" % value
+	if value <= SurvivalState.COLD_STRESS_TEMPERATURE:
+		reading += " · Too cold"
+	elif value >= SurvivalState.HEAT_STRESS_TEMPERATURE:
+		reading += " · Too hot"
+	elif absf(target - value) > 0.15:
+		if target == SurvivalState.NORMAL_BODY_TEMPERATURE:
+			reading += " · Recovering"
+		else:
+			reading += " · Cooling" if target < value else " · Warming"
+	if _body_temperature.text != reading:
+		_body_temperature.text = reading
+	var tint := PAPER
+	if value < TemperatureGauge.COMFORT_MIN:
+		tint = TemperatureGauge.COLD
+	elif value > TemperatureGauge.COMFORT_MAX:
+		tint = TemperatureGauge.HOT
+	if _body_temperature.get_theme_color("font_color") != tint:
+		_body_temperature.add_theme_color_override("font_color", tint)
 
 
 static func _meter_style(fill: Color) -> StyleBoxFlat:

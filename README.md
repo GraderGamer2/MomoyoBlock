@@ -35,7 +35,9 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 
 Mine, build, and gather within two tiles of your explorer. Softer blocks are quicker to mine. Keep the pointer on the block while holding the button. Use the workshop to turn stone, ore, and alloy into a Prospector Pick for faster mining of hard blocks, air canisters for a quick top-up, or a pressure liner for dense atmospheres.
 
-Planets generate nearby terrain as you walk or dig. The HUD shows current weather, temperature, pressure, and the direction back to the beacon. Heat raises water use, cold raises food use, and pressure above 175 kPa strains the suit. Overhead cover reduces exposure to harsh weather.
+Planets generate nearby terrain as you walk or dig. The HUD shows current weather, outdoor temperature, pressure, and the direction back to the beacon. Heat raises water use, cold raises food use, and pressure above 175 kPa strains the suit. Overhead cover reduces exposure to harsh weather.
+
+The **Body temp** gauge tracks your explorer's temperature in Celsius. Prolonged exposure can push it below 34 °C or above 40 °C and start draining health. Mild air, landing beacons, and Relay Nine's sealed cabin let body temperature gradually return to 37 °C. In orbit, the suit regulates heat during EVA. Your body temperature is saved with your other vitals.
 
 Oxygen replenishes in breathable air, near a landing beacon, and inside Relay Nine's sealed cabin. The exterior deck is exposed to vacuum. If a breach vents the cabin, patch it with alloy. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
 

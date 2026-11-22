@@ -64,7 +64,7 @@ func _ready() -> void:
 		station.restore_journal(TerrainJournal.unpack(_station_journal, false))
 		kit.restore(state.kit)
 		survival.restore(state.vitals)
-		if region == BlockWorld.Region.STATION and _save.loaded_format < ExpeditionSave.FORMAT:
+		if region == BlockWorld.Region.STATION and _save.loaded_format < ExpeditionSave.STATION_REFIT_FORMAT:
 			point = station.station_arrival()
 			origin = Vector2i.ZERO
 	elif _save.read_error == OK:
@@ -380,6 +380,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var harsh := PlanetProfile.harsh_weather(front)
 	var sheltered := harsh and _under_cover()
 	var pressure := surface.planet.pressure_kpa if on_surface else 0
+	# The suit regulates temperature in orbit. On a planet it is exposed to the local climate.
 	var outside_temperature := surface.planet.temperature_at(elapsed, front) if on_surface else SurvivalState.CABIN_TEMPERATURE
 	var temperature := outside_temperature
 	var breathable := breathable_here()
@@ -409,7 +410,8 @@ func _update_survival_display(seconds := 0.0) -> void:
 	if on_surface:
 		environment = "Outside  %d kPa · %d °C" % [surface.planet.pressure_kpa, roundi(outside_temperature)]
 	_hud.show_survival(survival, kit, air, weather_text if on_surface else "Orbit", environment,
-			on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT)
+			on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT,
+			SurvivalState.body_temperature_target(temperature))
 
 
 func _under_cover() -> bool:

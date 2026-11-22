@@ -4,8 +4,9 @@ extends RefCounted
 const DIRECTORY := "user://saves"
 const DEFAULT_FILE := "expedition.save"
 const SLOT := DIRECTORY + "/" + DEFAULT_FILE
-const FORMAT := 4
 const COMPACT_FORMAT := 3
+const STATION_REFIT_FORMAT := 4
+const FORMAT := 5
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -87,8 +88,12 @@ func read() -> Dictionary:
 	if loaded_format < COMPACT_FORMAT:
 		state = _migrate_legacy(state)
 	if not state.is_empty() and loaded_format < FORMAT:
+		if loaded_format < STATION_REFIT_FORMAT:
+			state.kit = ExpeditionKit.new().snapshot()
+		var vitals: Variant = state.get("vitals")
+		if vitals is Dictionary:
+			vitals["body_temperature"] = SurvivalState.NORMAL_BODY_TEMPERATURE
 		state.format = FORMAT
-		state.kit = ExpeditionKit.new().snapshot()
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}

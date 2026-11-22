@@ -28,6 +28,7 @@ func _run() -> void:
 			"First-playtest saves keep their existing Cinder Reach edits")
 	_expect(game.survival.oxygen == 100.0 and game.survival.food == 2, "First-playtest saves gain survival defaults")
 	_check_survival_model()
+	_check_body_temperature()
 	await _check_weather(game)
 	var start := game.explorer.position
 	Input.action_press("move_right")
@@ -95,6 +96,7 @@ func _run() -> void:
 	await _frames(90)
 	_expect(game.region == BlockWorld.Region.SURFACE, "The return trip reaches the surface")
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.SOIL, "Surface edits outlast a trip")
+	game.survival.body_temperature = 38.7
 	_expect(game.save_expedition(), "The expedition saves")
 	game.queue_free()
 	await get_tree().process_frame
@@ -104,6 +106,9 @@ func _run() -> void:
 	_expect(game.region == BlockWorld.Region.SURFACE, "Reopening restores the last region")
 	_expect(game.inventory[2] == alloy - 1 and game.selected == 2, "Reopening restores inventory and selection")
 	_expect(game.kit.pick and game.kit.liner and game.kit.canisters == 1, "Reopening restores crafted equipment")
+	var temperature := game.find_child("BodyTemperature", true, false) as Label
+	_expect(is_equal_approx(game.survival.body_temperature, 38.7) and temperature.text == "38.7 °C · Recovering",
+			"The saved body temperature and recovery reading return at the beacon")
 	_expect(game.terrain.block_at(surface_block) == BlockWorld.Block.EMPTY, "Reopening restores the mined block")
 	_expect(game.station.edits.get(station_block) == BlockWorld.Block.ALLOY,
 			"Reopening restores the inactive station edits")
@@ -250,6 +255,33 @@ func _check_survival_model() -> void:
 	_expect(first.make_chunk(Vector2i.ZERO) == second.make_chunk(Vector2i.ZERO), "Distant addresses reproduce the same terrain")
 
 
+func _check_body_temperature() -> void:
+	var hot := SurvivalState.new()
+	var cold := SurvivalState.new()
+	var storm := SurvivalState.new()
+	hot.advance(5.0, true, false, SurvivalState.CABIN_PRESSURE, 72.0)
+	cold.advance(5.0, true, false, SurvivalState.CABIN_PRESSURE, -45.0)
+	storm.advance(5.0, true, true, SurvivalState.CABIN_PRESSURE, -45.0)
+	_expect(hot.body_temperature > 37.0 and cold.body_temperature < 37.0 and
+			hot.health == 100.0 and cold.health == 100.0, "Brief exposure changes body temperature without damaging health")
+	_expect(storm.body_temperature < cold.body_temperature, "Unshielded storms increase exposure")
+	for _tick in 240:
+		hot.advance(SurvivalState.TICK, true, false, SurvivalState.CABIN_PRESSURE, 72.0)
+		cold.advance(SurvivalState.TICK, true, false, SurvivalState.CABIN_PRESSURE, -45.0)
+	_expect(hot.body_temperature > SurvivalState.HEAT_STRESS_TEMPERATURE and hot.health < 100.0 and
+			cold.body_temperature < SurvivalState.COLD_STRESS_TEMPERATURE and cold.health < 100.0,
+			"Prolonged exposure to heat or cold damages health")
+	var before := hot.body_temperature
+	hot.advance(15.0, true, false)
+	_expect(hot.body_temperature < before and hot.body_temperature > 37.0,
+			"Normal conditions recover body temperature gradually")
+	cold.restore_after_rescue()
+	_expect(cold.body_temperature == 37.0, "Rescue resets body temperature")
+	var invalid := cold.snapshot()
+	invalid["body_temperature"] = NAN
+	_expect(not SurvivalState.valid_snapshot(invalid), "A non-finite saved body temperature is rejected")
+
+
 func _check_station(game: MomoyoGame) -> void:
 	_expect(game.station.station_cabin_sealed(), "The refit begins with a sealed cabin")
 	var wall := Vector2i(BlockWorld.STATION_CABIN.position.x - 1, BlockWorld.PAD_ROW - 1)
@@ -335,11 +367,13 @@ func _check_previous_format() -> void:
 	var old := FileAccess.open(ExpeditionSave.SLOT, FileAccess.WRITE)
 	var edit := Vector2i(2, BlockWorld.PAD_ROW)
 	var sector := Vector2i.RIGHT
+	var old_vitals := SurvivalState.new().snapshot()
+	old_vitals.erase("body_temperature")
 	old.store_var({
 		"format": 2, "world_revision": 1, "region": BlockWorld.Region.STATION, "sector": sector,
 		"position": BlockWorld.pad_position(), "inventory": PackedInt32Array([12, 8, 30, 0]), "selected": 0,
 		"planets": {sector: {"blocks": {edit: BlockWorld.Block.EMPTY}, "harvested": {7: true}}},
-		"station": {"blocks": {}, "harvested": {}}, "vitals": SurvivalState.new().snapshot(),
+		"station": {"blocks": {}, "harvested": {}}, "vitals": old_vitals,
 	})
 	old.close()
 	var migrated := ExpeditionSave.new().read()
@@ -352,12 +386,25 @@ func _check_previous_format() -> void:
 				"0.2 building and forage data migrate into compact journals")
 		migrated.format = 3
 		migrated.erase("kit")
+		migrated.vitals.erase("body_temperature")
 		_expect(ExpeditionSave.new().write(migrated) == OK, "A 0.3 fixture can be written")
 		var previous := ExpeditionSave.new()
 		var updated := previous.read()
 		_expect(previous.loaded_format == 3 and updated.get("sector") == sector and
 				updated.get("kit", {}) == ExpeditionKit.new().snapshot(),
 				"0.3 compact terrain is preserved while gear migrates")
+		if not updated.is_empty():
+			var workbench := BlockWorld.pad_position() + Vector2(-216.0, 0.0)
+			updated.format = ExpeditionSave.STATION_REFIT_FORMAT
+			updated.position = workbench
+			updated.kit = {"pick": true, "liner": false, "canisters": 2}
+			updated.vitals.erase("body_temperature")
+			_expect(previous.write(updated) == OK, "A 0.4 fixture can be written")
+			var game := _open_game()
+			_expect(game.region == BlockWorld.Region.STATION and game.explorer.position == workbench and
+					game.kit.pick and game.kit.canisters == 2 and game.survival.body_temperature == 37.0,
+					"A 0.4 station save gains normal body temperature and keeps its position and equipment")
+			game.free()
 
 
 func _check_journal() -> void:

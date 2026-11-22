@@ -19,6 +19,7 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Mine blocks with visible progress and time scaled to hardness. Gather materials for a pick, reserve air, and pressure protection.
 - Refit Relay Nine with a workshop and a pressurized cabin that can vent and be repaired. Use the exterior deck to build in vacuum.
 - Show atmospheric pressure and temperature on the HUD and star chart. Prepare for hot, cold, and high-pressure worlds with supplies and suit equipment.
+- Track body temperature separately from outdoor temperature. Exposure builds over time, and the HUD shows when the explorer is heating up, cooling down, or recovering.
 
 ## Next · Habitats, storage, and ecology
 
@@ -28,7 +29,17 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 
 ## Later · Vehicles and shipbuilding
 
-- Build ground vehicles, launch vehicles, walkable ships, and expandable stations by combining blocks, machinery, and crafted parts.
+- Build ground vehicles, launch vehicles, ships, and expandable stations by combining blocks, machinery, and crafted parts.
+- Give ships walkable interiors. Let the player leave the pilot seat and move between the cockpit, cargo bay, airlock, and life support while docked or in flight.
 - Give constructed vehicles functional power, propulsion, fuel, cargo, and life support. Connect the consequences of preparation and damage to launch, docking, and emergency returns.
 - Add discovery and route planning across multiple systems. Grow the variety of independently generated scenery, species, climates, and hazards.
-- Establish textures, animation, and audio after testing the scale and pacing of survival and construction.
+
+## Later · NPCs, trading, and encounters
+
+- Meet traders and travelers on stations and at planetary outposts. Exchange supplies, tools, and local materials, and learn about nearby sectors.
+- Build encounters around what the player finds, such as distress signals, stranded crews, and traveling merchants with unusual cargo.
+
+## Later · Art and audio
+
+- Replace the prototype geometry with original block textures and artwork for terrain, explorers, NPCs, wildlife, stations, and ship interiors.
+- Add animation, interface icons, weather effects, sound effects, ambient audio, and music as the scale and pacing settle.

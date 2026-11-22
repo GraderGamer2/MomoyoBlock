@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 · 2026-11-22
+
+- Added a body temperature gauge with a cold-to-hot scale, Celsius reading, and feedback for exposure and recovery.
+- Exposure gradually changes body temperature. Severe heat or cold drains health, and controlled air near beacons and in Relay Nine lets the explorer recover.
+- Persisted body temperature in expedition saves. Upgrading a 0.4.0 save keeps the explorer's position and equipment and starts body temperature at 37 °C.
+
 ## 0.4.0 · 2026-11-22
 
 - Lowered air consumption in vacuum and the additional cost of severe weather. Reduced health loss on an empty tank.
