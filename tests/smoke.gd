@@ -18,6 +18,8 @@ func _run() -> void:
 		return
 
 	await _check_menu()
+	_check_previous_format()
+	_check_journal()
 	_write_legacy_save()
 	var game := _open_game()
 	await _frames(16)
@@ -26,6 +28,7 @@ func _run() -> void:
 			"First-playtest saves keep their existing Cinder Reach edits")
 	_expect(game.survival.oxygen == 100.0 and game.survival.food == 2, "First-playtest saves gain survival defaults")
 	_check_survival_model()
+	await _check_weather(game)
 	var start := game.explorer.position
 	Input.action_press("move_right")
 	await _frames(12)
@@ -41,6 +44,8 @@ func _run() -> void:
 
 	var food := game.survival.food
 	game.explorer.position.x = -80.0
+	_expect(not game.gather_nearby(), "Forage beyond two tiles is out of reach")
+	game.explorer.position.x = -100.0
 	_expect(game.gather_nearby() and game.survival.food == food + 1, "Planet forage replenishes carried food")
 	_expect(game.surface.harvested.has(-6), "Harvest marks the original plant column")
 	game.explorer.position = BlockWorld.pad_position()
@@ -52,7 +57,10 @@ func _run() -> void:
 	var soil := game.inventory[0]
 	_expect(not game.mine(Vector2i(0, BlockWorld.PAD_ROW)), "Beacon pad is protected")
 	_expect(not game.place(BlockWorld.cell_at(game.explorer.position)), "Placement avoids the explorer")
-	_expect(game.mine(surface_block) and game.inventory[0] == soil + 1, "Mining pays out soil once")
+	_expect(not game.mine(surface_block), "Mining cannot reach a tile center more than two tiles away")
+	_expect(not game.place(Vector2i(3, BlockWorld.PAD_ROW - 1)), "Placement has the same short range")
+	game.explorer.position.x = 35.0
+	_expect(game.mine(surface_block) and game.inventory[0] == soil + 1, "Nearby mining pays out soil once")
 	_expect(not game.mine(surface_block), "An empty cell cannot be mined")
 	_expect(game.place(above_surface) and game.inventory[0] == soil, "Placement consumes one block")
 	_expect(not game.place(Vector2i(40, 7)), "Placement respects reach")
@@ -68,7 +76,7 @@ func _run() -> void:
 	await _frames(90)
 	_expect(game.region == BlockWorld.Region.STATION, "Travel reaches the orbital station")
 	game.selected = 2
-	var station_block := Vector2i(-3, BlockWorld.PAD_ROW - 1)
+	var station_block := Vector2i(-1, BlockWorld.PAD_ROW - 2)
 	var alloy := game.inventory[2]
 	_expect(game.place(station_block), "The orbital station accepts building")
 	_expect(game.begin_travel(), "The station beacon starts the return trip")
@@ -100,7 +108,7 @@ func _run() -> void:
 	_expect(game.sector == Vector2i.RIGHT and game.region == BlockWorld.Region.SURFACE, "Chart travel reaches a generated planet")
 	_expect(not game.surface.planet.details.breathable, "The first destination requires suit oxygen")
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.EMPTY, "Edits belong to the planet where they were made")
-	var foreign_block := Vector2i(4, BlockWorld.PAD_ROW - 1)
+	var foreign_block := Vector2i(1, BlockWorld.PAD_ROW - 2)
 	_expect(game.place(foreign_block), "You can build on another planet")
 	_expect(game.save_expedition(), "The expedition saves a destination and its changes")
 	game.queue_free()
@@ -116,6 +124,7 @@ func _run() -> void:
 	await _frames(90)
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.SOIL and game.surface.harvested.has(-6),
 			"Returning to the original sector restores terrain and forage changes")
+	game = await _check_far_terrain(game)
 	_expect(not FileAccess.file_exists("user://logs/godot.log"), "Development file logging is disabled")
 	game.queue_free()
 	await get_tree().process_frame
@@ -159,6 +168,11 @@ func _check_menu() -> void:
 	app.start_expedition()
 	await _frames(5)
 	_expect(app.screen == MomoyoApp.Screen.EXPLORING, "The main menu starts an expedition")
+	var first_seed := app.game.universe_seed
+	var first_sector := app.game.sector
+	var first_title := app.game.surface.planet.title()
+	_expect(first_seed != 0 and first_title != "Cinder Reach", "A new expedition starts on a seeded planet with a generated name")
+	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The starting seed is saved immediately")
 	app.game.survival.hunger = 88.0
 	app.show_pause()
 	await _frames(30)
@@ -167,6 +181,17 @@ func _check_menu() -> void:
 	await _frames(3)
 	_expect(app.game == null and app.screen == MomoyoApp.Screen.TITLE and not get_tree().paused, "Save and return reopens the main menu")
 	_expect(FileAccess.file_exists(ExpeditionSave.SLOT), "Returning to the main menu saves the expedition")
+	app.start_expedition()
+	await _frames(5)
+	_expect(app.game.universe_seed == first_seed and app.game.sector == first_sector and app.game.surface.planet.title() == first_title,
+			"Continuing an expedition restores the same generated starting planet")
+	app.return_to_menu()
+	await _frames(3)
+	app.start_new_expedition()
+	await _frames(3)
+	_expect(app.game.universe_seed != first_seed and ExpeditionSave.slots().size() == 2,
+			"A second expedition starts a new universe and keeps the previous slot")
+	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The original expedition is preserved")
 	app.queue_free()
 	await get_tree().process_frame
 
@@ -182,11 +207,104 @@ func _check_survival_model() -> void:
 	suit.advance(7.0, true, false)
 	_expect(suit.oxygen == 100.0, "Breathable air replenishes the suit")
 	var origin := PlanetProfile.new(Vector2i.ZERO)
-	_expect(not origin.weather_active(12.0) and origin.weather_active(55.0), "Planet weather moves through a cycle")
+	_expect(origin.weather_at(12.0).is_empty() and origin.weather_at(55.0) == "Rain", "Planet weather moves through a cycle")
 	var address := Vector2i(-2147483648, 2147483647)
 	var first := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	var second := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	_expect(first.make_chunk(Vector2i.ZERO) == second.make_chunk(Vector2i.ZERO), "Distant addresses reproduce the same terrain")
+
+
+func _check_weather(game: MomoyoGame) -> void:
+	var weather := game.find_child("CurrentWeather", true, false) as Label
+	var precipitation := game.get_node("Weather/Front") as WeatherLayer
+	game.survival.elapsed = 46.93
+	await _frames(18)
+	_expect(weather.text == "Weather: Rain" and precipitation.visible, "Rain and the HUD switch on together")
+	game.survival.elapsed = 69.93
+	await _frames(18)
+	_expect(weather.text == "Weather: Clear" and not precipitation.visible, "Clear weather also updates the HUD")
+
+
+func _check_far_terrain(game: MomoyoGame) -> MomoyoGame:
+	for direction: int in [-1, 1]:
+		var old_wall := 192 * BlockWorld.TILE_SIZE * direction
+		var standing := Vector2(old_wall - 8.0 * direction, 0.0)
+		var column := floori(standing.x / BlockWorld.TILE_SIZE)
+		var ground := game.surface.surface_row(column)
+		for x: int in range(column - 6, column + 7):
+			game.surface.record_edit(Vector2i(x, ground), BlockWorld.Block.STONE)
+			for gap in range(1, 4):
+				game.surface.record_edit(Vector2i(x, ground - gap), BlockWorld.Block.EMPTY)
+		game._open_region(BlockWorld.Region.SURFACE, Vector2(standing.x, ground * BlockWorld.TILE_SIZE - 15.0))
+		await _frames(5)
+		var walk := "move_left" if direction < 0 else "move_right"
+		Input.action_press(walk)
+		await _frames(20)
+		Input.action_release(walk)
+		_expect(game.explorer.position.x * direction > absi(old_wall) + 24.0, "Walking crosses the former horizontal boundary")
+
+	var origin := Vector2i(4000000, 128)
+	var local := Vector2(ActiveTerrain.REBASE_DISTANCE + 14.0, BlockWorld.TILE_SIZE * 3 - 15.0)
+	var absolute_cell := origin + BlockWorld.cell_at(local)
+	for x in range(absolute_cell.x - 2, absolute_cell.x + 3):
+		for headroom in range(3):
+			game.surface.record_edit(Vector2i(x, absolute_cell.y - headroom), BlockWorld.Block.EMPTY)
+		game.surface.record_edit(Vector2i(x, absolute_cell.y + 1), BlockWorld.Block.STONE)
+	game._open_region(BlockWorld.Region.SURFACE, local, origin)
+	await _frames(10)
+	_expect(game.terrain.origin_cell.x > origin.x and absf(game.explorer.position.x) < BlockWorld.TILE_SIZE * 2.0,
+			"The scene origin recenters far from spawn")
+	_expect(game.terrain.world_cell(game.explorer.position) == absolute_cell and game.explorer.is_on_floor(),
+			"Recentering keeps the logical position and local collision deep underground")
+	_expect(game.save_expedition(), "An expedition saves a rebased position")
+	game.queue_free()
+	await get_tree().process_frame
+
+	game = _open_game()
+	await _frames(8)
+	_expect(game.terrain.world_cell(game.explorer.position) == absolute_cell and game.explorer.is_on_floor(),
+			"A far-away explorer reloads with correct world coordinates and collision")
+	return game
+
+
+func _check_previous_format() -> void:
+	var old := FileAccess.open(ExpeditionSave.SLOT, FileAccess.WRITE)
+	var edit := Vector2i(2, BlockWorld.PAD_ROW)
+	var sector := Vector2i.RIGHT
+	old.store_var({
+		"format": 2, "world_revision": 1, "region": BlockWorld.Region.STATION, "sector": sector,
+		"position": BlockWorld.pad_position(), "inventory": PackedInt32Array([12, 8, 30, 0]), "selected": 0,
+		"planets": {sector: {"blocks": {edit: BlockWorld.Block.EMPTY}, "harvested": {7: true}}},
+		"station": {"blocks": {}, "harvested": {}}, "vitals": SurvivalState.new().snapshot(),
+	})
+	old.close()
+	var migrated := ExpeditionSave.new().read()
+	_expect(migrated.get("sector") == sector and migrated.get("universe_seed") == 0,
+			"A 0.2 expedition keeps its original galaxy and destination")
+	if not migrated.is_empty():
+		var journal := TerrainJournal.unpack(migrated.planets[sector], true)
+		_expect(journal.blocks.get(edit) == BlockWorld.Block.EMPTY and journal.harvested.has(7),
+				"0.2 building and forage data migrate into compact journals")
+
+
+func _check_journal() -> void:
+	var edits: Dictionary[Vector2i, int] = {}
+	for x in range(-100, 100):
+		for y in range(100, 105):
+			edits[Vector2i(x, y)] = BlockWorld.Block.STONE
+	var harvests := {-876543: true, 54321: true}
+	var packet := TerrainJournal.pack(edits, harvests)
+	var journal := TerrainJournal.unpack(packet, true)
+	_expect(packet.size() < 4000 and journal.get("blocks") == edits and journal.get("harvested") == harvests,
+			"An edited region compresses and restores every cell and harvest")
+	_expect(TerrainJournal.unpack(packet, false).is_empty(), "Station journals do not contain surface harvests")
+	var first := PlanetProfile.new(Vector2i(18, -23), 112334)
+	var repeat := PlanetProfile.new(Vector2i(18, -23), 112334)
+	var different := PlanetProfile.new(Vector2i(18, -23), 471104)
+	_expect(first.details == repeat.details and first.details != different.details,
+			"Planet profiles depend on both the persistent universe seed and sector")
+	for t in range(20, 200, 17):
+		_expect(first.weather_at(t) == repeat.weather_at(t), "Seeded fronts reproduce on the expedition clock")
 
 
 func _write_legacy_save() -> void:

@@ -1,7 +1,7 @@
 class_name MomoyoApp
 extends Node
 
-enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART }
+enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD }
 
 const EXPEDITION := preload("res://game/main.tscn")
 
@@ -41,6 +41,8 @@ func _input(event: InputEvent) -> void:
 			resume_expedition()
 		Screen.SETTINGS:
 			_leave_settings()
+		Screen.LOAD:
+			show_title()
 
 
 func _notification(what: int) -> void:
@@ -53,22 +55,55 @@ func show_title() -> void:
 	_quit_confirmed = false
 	get_tree().paused = false
 	var body := _ui.open_panel("MomoyoBlock", "Survival expedition", true)
-	var caption := "Continue expedition" if FileAccess.file_exists(ExpeditionSave.SLOT) else "New expedition"
-	var play := _ui.button(caption, start_expedition, true)
-	body.add_child(play)
+	var slots := ExpeditionSave.slots()
+	var play: Button
+	if slots.is_empty():
+		play = _ui.button("New expedition", start_new_expedition, true)
+		body.add_child(play)
+	else:
+		play = _ui.button("Continue expedition", start_expedition.bind(slots[0]), true)
+		body.add_child(play)
+		body.add_child(_ui.button("New expedition", start_new_expedition))
+		if slots.size() > 1:
+			body.add_child(_ui.button("Load expedition", _show_load_menu))
 	body.add_child(_ui.button("Settings", show_settings.bind(Screen.TITLE)))
 	body.add_child(_ui.button("Quit", request_quit))
 	_ui.finish_panel(play)
 
 
-func start_expedition() -> void:
+func start_new_expedition() -> void:
+	start_expedition(ExpeditionSave.unused_filename())
+
+
+func start_expedition(filename := ExpeditionSave.DEFAULT_FILE) -> void:
 	if game != null:
 		return
 	game = EXPEDITION.instantiate()
+	game.save_filename = filename
 	game.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(game)
 	game.chart_requested.connect(show_chart)
 	resume_expedition()
+
+
+func _show_load_menu() -> void:
+	var slots := ExpeditionSave.slots()
+	if slots.is_empty():
+		show_title()
+		return
+	screen = Screen.LOAD
+	var body := _ui.open_panel("Load expedition", "Choose a saved expedition.", true)
+	var picker := OptionButton.new()
+	picker.custom_minimum_size.y = 36
+	for filename in slots:
+		picker.add_item(ExpeditionSave.slot_title(filename))
+	picker.select(0)
+	body.add_child(picker)
+	var load_button := _ui.button("Load selected expedition",
+			func() -> void: start_expedition(slots[picker.selected]), true)
+	body.add_child(load_button)
+	body.add_child(_ui.button("Back", show_title))
+	_ui.finish_panel(picker)
 
 
 func resume_expedition() -> void:
@@ -225,12 +260,12 @@ func _land(column: SpinBox, row: SpinBox) -> void:
 		resume_expedition()
 
 
-static func _refresh_chart(column: SpinBox, row: SpinBox, preview: Label, detail: Label) -> void:
-	var destination := PlanetProfile.new(Vector2i(int(column.value), int(row.value)))
-	preview.text = destination.title()
+func _refresh_chart(column: SpinBox, row: SpinBox, preview: Label, detail: Label) -> void:
+	var destination := PlanetProfile.new(Vector2i(int(column.value), int(row.value)), game.universe_seed)
+	preview.text = destination.chart_title()
 	var air := "Breathable" if destination.details.breathable else "Suit oxygen required"
 	detail.text = "%s  ·  %s  ·  %s\nForage: %s and %s  ·  %s" % [
-		destination.details.biome, air, destination.details.weather,
+		destination.details.biome, air, game.weather_forecast(destination),
 		destination.details.flora, destination.details.water, destination.details.fauna,
 	]
 

@@ -2,18 +2,71 @@ class_name ExpeditionSave
 extends RefCounted
 
 const DIRECTORY := "user://saves"
-const SLOT := DIRECTORY + "/expedition.save"
-const FORMAT := 2
+const DEFAULT_FILE := "expedition.save"
+const SLOT := DIRECTORY + "/" + DEFAULT_FILE
+const FORMAT := 3
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
+var path: String
+
+
+func _init(filename := DEFAULT_FILE) -> void:
+	path = DIRECTORY.path_join(filename if _valid_filename(filename) else DEFAULT_FILE)
+
+
+static func slots() -> Array[String]:
+	var found: Array[String] = []
+	if not DirAccess.dir_exists_absolute(DIRECTORY):
+		return found
+	var modified: Dictionary[String, int] = {}
+	for filename in DirAccess.get_files_at(DIRECTORY):
+		if _valid_filename(filename):
+			found.append(filename)
+			modified[filename] = FileAccess.get_modified_time(DIRECTORY.path_join(filename))
+	found.sort_custom(func(a: String, b: String) -> bool:
+		if modified[a] != modified[b]:
+			return modified[a] > modified[b]
+		if a == DEFAULT_FILE or b == DEFAULT_FILE:
+			return b == DEFAULT_FILE
+		return a > b)
+	return found
+
+
+static func unused_filename() -> String:
+	if not FileAccess.file_exists(SLOT):
+		return DEFAULT_FILE
+	while true:
+		var timestamp := int(Time.get_unix_time_from_system() * 1000.0)
+		var filename := "expedition-%d-%08x.save" % [timestamp, randi()]
+		if not FileAccess.file_exists(DIRECTORY.path_join(filename)):
+			return filename
+	return DEFAULT_FILE
+
+
+static func slot_title(filename: String) -> String:
+	if filename == DEFAULT_FILE:
+		return "Original expedition"
+	@warning_ignore("integer_division")
+	var seconds := filename.get_slice("-", 1).to_int() / 1000
+	return "Expedition %s UTC · %s" % [Time.get_datetime_string_from_unix_time(seconds, true),
+			filename.get_basename().get_slice("-", 2).right(4).to_upper()]
+
+
+static func _valid_filename(filename: String) -> bool:
+	if filename == DEFAULT_FILE:
+		return true
+	if filename != filename.get_file() or not filename.begins_with("expedition-") or not filename.ends_with(".save"):
+		return false
+	var parts := filename.get_basename().split("-")
+	return parts.size() == 3 and parts[1].length() == 13 and parts[1].is_valid_int() and parts[2].length() == 8 and parts[2].is_valid_hex_number()
 
 
 func read() -> Dictionary:
-	if not FileAccess.file_exists(SLOT):
+	if not FileAccess.file_exists(path):
 		return {}
 
-	var file := FileAccess.open(SLOT, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		read_error = FileAccess.get_open_error()
 		return {}
@@ -28,8 +81,8 @@ func read() -> Dictionary:
 	if error != OK or not _state_header_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
-	if state.format == 1:
-		state = _migrate_first_playtest(state)
+	if state.format < FORMAT:
+		state = _migrate(state)
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
@@ -43,7 +96,7 @@ func write(state: Dictionary) -> Error:
 	if result != OK:
 		return result
 
-	var temp := DIRECTORY.path_join(".expedition-%d.tmp" % OS.get_process_id())
+	var temp := DIRECTORY.path_join(".%s-%d.tmp" % [path.get_file(), OS.get_process_id()])
 	var file := FileAccess.open(temp, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
@@ -56,25 +109,23 @@ func write(state: Dictionary) -> Error:
 		result = ERR_FILE_CANT_WRITE
 	file.close()
 	if result == OK:
-		result = DirAccess.rename_absolute(temp, SLOT)
+		result = DirAccess.rename_absolute(temp, path)
 	if result != OK:
 		DirAccess.remove_absolute(temp)
 	return result
 
 
 static func _state_header_valid(state: Variant) -> bool:
-	if not state is Dictionary or state.get("world_revision") != BlockWorld.WORLD_REVISION:
+	if not state is Dictionary:
 		return false
-	if state.get("format") != 1 and state.get("format") != FORMAT:
+	var format: Variant = state.get("format")
+	if not format is int or format < 1 or format > FORMAT:
 		return false
 	var region: Variant = state.get("region")
 	if not region is int or region < BlockWorld.Region.SURFACE or region > BlockWorld.Region.STATION:
 		return false
-	var position: Variant = state.get("position")
-	if not position is Vector2 or not position.is_finite():
-		return false
-	var bounds := BlockWorld.SURFACE_BOUNDS if region == BlockWorld.Region.SURFACE else BlockWorld.STATION_BOUNDS
-	if not Rect2(Vector2(bounds.position), Vector2(bounds.size)).has_point(position / BlockWorld.TILE_SIZE):
+	var point: Variant = state.get("position")
+	if not point is Vector2 or not point.is_finite():
 		return false
 	var inventory: Variant = state.get("inventory")
 	if not inventory is PackedInt32Array or inventory.size() != BlockWorld.BUILD_MATERIALS.size():
@@ -86,34 +137,71 @@ static func _state_header_valid(state: Variant) -> bool:
 	return selected is int and selected >= 0 and selected < inventory.size()
 
 
-static func _migrate_first_playtest(state: Dictionary) -> Dictionary:
-	var edits: Variant = state.get("edits")
-	if not edits is Array or edits.size() != 2:
+static func _migrate(state: Dictionary) -> Dictionary:
+	if state.get("world_revision") != BlockWorld.LEGACY_REVISION:
 		return {}
+	var bounds := BlockWorld.LEGACY_SURFACE_BOUNDS if state.region == BlockWorld.Region.SURFACE else BlockWorld.LEGACY_STATION_BOUNDS
+	if not bounds.has_point(BlockWorld.cell_at(state.position)):
+		return {}
+
+	if state.format == 1:
+		var edits: Variant = state.get("edits")
+		if not edits is Array or edits.size() != 2:
+			return {}
+		state.sector = Vector2i.ZERO
+		state.planets = {Vector2i.ZERO: {"blocks": edits[0], "harvested": {}}}
+		state.station = {"blocks": edits[1], "harvested": {}}
+		state.vitals = SurvivalState.new().snapshot()
+		state.erase("edits")
+
+	var planets: Variant = state.get("planets")
+	if not planets is Dictionary or not _valid_legacy_journal(state.get("station"), BlockWorld.LEGACY_STATION_BOUNDS, false):
+		return {}
+	var packed: Dictionary[Vector2i, PackedByteArray] = {}
+	for sector: Variant in planets:
+		var journal: Variant = planets[sector]
+		if not sector is Vector2i or not _valid_legacy_journal(journal, BlockWorld.LEGACY_SURFACE_BOUNDS, true):
+			return {}
+		if not journal.blocks.is_empty() or not journal.harvested.is_empty():
+			packed[sector] = TerrainJournal.pack(journal.blocks, journal.harvested)
+
 	state.format = FORMAT
-	state.sector = Vector2i.ZERO
-	state.planets = {Vector2i.ZERO: {"blocks": edits[0], "harvested": {}}}
-	state.station = {"blocks": edits[1], "harvested": {}}
-	state.vitals = SurvivalState.new().snapshot()
-	state.erase("edits")
+	state.universe_seed = 0
+	state.origin = Vector2i.ZERO
+	state.planets = packed
+	state.station = TerrainJournal.pack(state.station.blocks, state.station.harvested)
 	return state
 
 
 static func _state_data_valid(state: Dictionary) -> bool:
+	var world_seed: Variant = state.get("universe_seed")
+	if not world_seed is int:
+		return false
+	var expected_revision := BlockWorld.LEGACY_REVISION if world_seed == 0 else BlockWorld.WORLD_REVISION
+	if state.get("world_revision") != expected_revision:
+		return false
+	var origin: Variant = state.get("origin")
+	if not origin is Vector2i or origin % BlockWorld.CHUNK_SIZE != Vector2i.ZERO:
+		return false
+	var point: Vector2 = state.position
+	if maxf(absf(point.x), absf(point.y)) > ActiveTerrain.REBASE_DISTANCE + 2 * BlockWorld.TILE_SIZE:
+		return false
 	var planets: Variant = state.get("planets")
 	if not state.get("sector") is Vector2i or not planets is Dictionary:
 		return false
 	if not SurvivalState.valid_snapshot(state.get("vitals")):
 		return false
-	if not _valid_journal(state.get("station"), BlockWorld.STATION_BOUNDS, false):
+	var station: Variant = state.get("station")
+	if not station is PackedByteArray or TerrainJournal.unpack(station, false).is_empty():
 		return false
 	for address: Variant in planets:
-		if not address is Vector2i or not _valid_journal(planets[address], BlockWorld.SURFACE_BOUNDS, true):
+		var packet: Variant = planets[address]
+		if not address is Vector2i or not packet is PackedByteArray or TerrainJournal.unpack(packet, true).is_empty():
 			return false
 	return true
 
 
-static func _valid_journal(data: Variant, bounds: Rect2i, can_harvest: bool) -> bool:
+static func _valid_legacy_journal(data: Variant, bounds: Rect2i, can_harvest: bool) -> bool:
 	if not data is Dictionary:
 		return false
 	var edits: Variant = data.get("blocks")

@@ -1,36 +1,69 @@
 class_name ActiveTerrain
-extends TileMapLayer
+extends Node2D
 
-# At 1152 × 648, one 768 px chunk per side covers the camera plus a movement margin.
 const RADIUS := 1
+const REBASE_DISTANCE := BlockWorld.CHUNK_SIZE * BlockWorld.TILE_SIZE * 12
+const CELL_CENTER := Vector2(0.5, 0.5)
 
 var world: BlockWorld
+var origin_cell := Vector2i.ZERO
 var forage := ForageLayer.new()
 var _loaded: Dictionary[Vector2i, PackedByteArray] = {}
-var _center := Vector2i(1000000, 1000000)
+var _layers: Dictionary[Vector2i, TileMapLayer] = {}
+var _idle_layers: Array[TileMapLayer] = []
+var _center := Vector2i.ZERO
+var _tiles := TileSet.new()
+var _atlas := TileSetAtlasSource.new()
 
 
 func _ready() -> void:
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	navigation_enabled = false
-	occlusion_enabled = false
-	tile_set = _make_tileset()
+	_create_tileset()
 	forage.z_index = 1
 	add_child(forage)
 
 
-func open_region(new_world: BlockWorld, point: Vector2) -> void:
+func open_region(new_world: BlockWorld, point: Vector2, origin := Vector2i.ZERO) -> void:
 	world = new_world
-	clear()
-	_loaded.clear()
-	_center = Vector2i(1000000, 1000000)
+	origin_cell = origin
+	for key in _loaded.keys():
+		_unload(key)
+	_paint_atlas()
 	stream_around(point)
-	update_internals()
+	for layer in _layers.values():
+		layer.update_internals()
+
+
+func world_cell(point: Vector2) -> Vector2i:
+	return origin_cell + BlockWorld.cell_at(point)
+
+
+func scene_point(cell: Vector2i, inside := Vector2.ZERO) -> Vector2:
+	return (Vector2(cell - origin_cell) + inside) * BlockWorld.TILE_SIZE
+
+
+func rebase_if_needed(point: Vector2) -> Vector2:
+	if absf(point.x) < REBASE_DISTANCE and absf(point.y) < REBASE_DISTANCE:
+		return Vector2.ZERO
+	var relative := BlockWorld.cell_at(point)
+	# Move only the axes that need recentering.
+	if absf(point.x) < REBASE_DISTANCE:
+		relative.x = 0
+	if absf(point.y) < REBASE_DISTANCE:
+		relative.y = 0
+	var shift := BlockWorld.chunk_at(relative) * BlockWorld.CHUNK_SIZE
+	origin_cell += shift
+	for key in _layers:
+		var layer := _layers[key]
+		layer.position = scene_point(key * BlockWorld.CHUNK_SIZE)
+		layer.force_update_transform()
+	forage.origin_cell = origin_cell
+	forage.queue_redraw()
+	return Vector2(shift) * BlockWorld.TILE_SIZE
 
 
 func stream_around(point: Vector2) -> void:
-	var center := BlockWorld.chunk_at(BlockWorld.cell_at(point))
-	if center == _center:
+	var center := BlockWorld.chunk_at(world_cell(point))
+	if center == _center and not _loaded.is_empty():
 		return
 	_center = center
 	var radius := Vector2i(RADIUS, RADIUS)
@@ -43,11 +76,11 @@ func stream_around(point: Vector2) -> void:
 			var key := Vector2i(x, y)
 			if not _loaded.has(key):
 				_load(key)
-
 	_refresh_forage()
 
+
 func is_editable(cell: Vector2i) -> bool:
-	return world.bounds.has_point(cell) and _loaded.has(BlockWorld.chunk_at(cell)) and not BlockWorld.is_pad(cell)
+	return _loaded.has(BlockWorld.chunk_at(cell)) and not BlockWorld.is_pad(cell)
 
 
 func block_at(cell: Vector2i) -> int:
@@ -60,19 +93,19 @@ func block_at(cell: Vector2i) -> int:
 func set_block(cell: Vector2i, material: int) -> void:
 	var key := BlockWorld.chunk_at(cell)
 	var cells := _loaded[key]
-	cells[_index(cell, key)] = material
+	var index := _index(cell, key)
+	cells[index] = material
 	_loaded[key] = cells
 	world.record_edit(cell, material)
-	_paint(cell, material)
-	if world.region == BlockWorld.Region.SURFACE and absi(cell.y - world.surface_row(cell.x)) <= 1:
+	_paint(_layer_for(key), _cell_offset(index), material)
+	if world.planet != null and absi(cell.y - world.surface_row(cell.x)) <= 1:
 		_refresh_forage()
 
 
-func nearest_forage(point: Vector2, range_squared: float) -> Vector2i:
-	var closest := Vector2i(100000, 100000)
+func nearest_forage(point: Vector2, range_squared: float) -> Variant:
+	var closest: Variant = null
 	for cell in forage.markers:
-		var center := (Vector2(cell) + Vector2(0.5, 0.5)) * BlockWorld.TILE_SIZE
-		var distance := point.distance_squared_to(center)
+		var distance := point.distance_squared_to(scene_point(cell, CELL_CENTER))
 		if distance <= range_squared:
 			closest = cell
 			range_squared = distance
@@ -80,16 +113,18 @@ func nearest_forage(point: Vector2, range_squared: float) -> Vector2i:
 
 
 func harvest(cell: Vector2i) -> void:
-	world.harvested[cell.x] = true
+	world.record_harvest(cell.x)
 	forage.markers.erase(cell)
 	forage.queue_redraw()
 
 
 func _refresh_forage() -> void:
 	forage.markers.clear()
-	if world.region == BlockWorld.Region.SURFACE:
-		var start := maxi(world.bounds.position.x, (_center.x - RADIUS) * BlockWorld.CHUNK_SIZE)
-		var end := mini(world.bounds.end.x, (_center.x + RADIUS + 1) * BlockWorld.CHUNK_SIZE)
+	forage.origin_cell = origin_cell
+	forage.planet = world.planet
+	if world.planet != null:
+		var start := (_center.x - RADIUS) * BlockWorld.CHUNK_SIZE
+		var end := (_center.x + RADIUS + 1) * BlockWorld.CHUNK_SIZE
 		for x in range(start, end):
 			var kind := world.forage_kind(x)
 			if kind == 0:
@@ -98,42 +133,59 @@ func _refresh_forage() -> void:
 			var cell := ground + Vector2i.UP
 			if is_editable(cell) and block_at(cell) == BlockWorld.Block.EMPTY and block_at(ground) != BlockWorld.Block.EMPTY:
 				forage.markers[cell] = kind
-		forage.tint = world.planet.details.sky.lightened(0.45)
 	forage.queue_redraw()
 
 
 func _load(key: Vector2i) -> void:
-	var origin := key * BlockWorld.CHUNK_SIZE
-	var chunk_rect := Rect2i(origin, Vector2i.ONE * BlockWorld.CHUNK_SIZE)
-	if not world.bounds.intersects(chunk_rect):
-		return
 	var cells := world.make_chunk(key)
 	_loaded[key] = cells
+	var layer: TileMapLayer
 	for index in cells.size():
 		var material := cells[index]
 		if material != BlockWorld.Block.EMPTY:
-			_paint(origin + _cell_offset(index), material)
+			if layer == null:
+				layer = _layer_for(key)
+			_paint(layer, _cell_offset(index), material)
 
 
 func _unload(key: Vector2i) -> void:
-	var origin := key * BlockWorld.CHUNK_SIZE
-	var cells := _loaded[key]
-	for index in cells.size():
-		if cells[index] != BlockWorld.Block.EMPTY:
-			erase_cell(origin + _cell_offset(index))
+	if _layers.has(key):
+		var layer := _layers[key]
+		_layers.erase(key)
+		layer.clear()
+		layer.hide()
+		_idle_layers.append(layer)
 	_loaded.erase(key)
 
 
-func _paint(cell: Vector2i, material: int) -> void:
-	if material == BlockWorld.Block.EMPTY:
-		erase_cell(cell)
+func _layer_for(key: Vector2i) -> TileMapLayer:
+	if _layers.has(key):
+		return _layers[key]
+	var layer: TileMapLayer
+	if _idle_layers.is_empty():
+		layer = TileMapLayer.new()
+		layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		layer.navigation_enabled = false
+		layer.occlusion_enabled = false
+		layer.tile_set = _tiles
+		add_child(layer)
 	else:
-		set_cell(cell, 0, Vector2i(material - 1, 0))
+		layer = _idle_layers.pop_back()
+	layer.position = scene_point(key * BlockWorld.CHUNK_SIZE)
+	layer.show()
+	_layers[key] = layer
+	return layer
+
+
+static func _paint(layer: TileMapLayer, cell: Vector2i, material: int) -> void:
+	if material == BlockWorld.Block.EMPTY:
+		layer.erase_cell(cell)
+	else:
+		layer.set_cell(cell, 0, Vector2i(material - 1, 0))
 
 
 static func _cell_offset(index: int) -> Vector2i:
-	@warning_ignore("integer_division")
-	return Vector2i(index % BlockWorld.CHUNK_SIZE, index / BlockWorld.CHUNK_SIZE)
+	return Vector2i(index & (BlockWorld.CHUNK_SIZE - 1), index >> BlockWorld.CHUNK_BITS)
 
 
 static func _index(cell: Vector2i, key: Vector2i) -> int:
@@ -141,18 +193,45 @@ static func _index(cell: Vector2i, key: Vector2i) -> int:
 	return local.y * BlockWorld.CHUNK_SIZE + local.x
 
 
-static func _make_tileset() -> TileSet:
+func _create_tileset() -> void:
 	var size := BlockWorld.TILE_SIZE
+	_tiles.tile_size = Vector2i.ONE * size
+	_tiles.add_physics_layer()
+	_tiles.set_physics_layer_collision_layer(0, 1)
+	_atlas.texture_region_size = _tiles.tile_size
+	_paint_atlas()
+	_tiles.add_source(_atlas, 0)
+
+	var half := size * 0.5
+	var shape := PackedVector2Array([
+		Vector2(-half, -half), Vector2(half, -half),
+		Vector2(half, half), Vector2(-half, half),
+	])
+	for i in BlockWorld.TILE_COLORS.size() - 1:
+		var coords := Vector2i(i, 0)
+		_atlas.create_tile(coords)
+		var data := _atlas.get_tile_data(coords, 0)
+		data.add_collision_polygon(0)
+		data.set_collision_polygon_points(0, 0, shape)
+
+
+func _paint_atlas() -> void:
+	var size := BlockWorld.TILE_SIZE
+	var colors: Array[Color] = BlockWorld.TILE_COLORS.duplicate()
+	if world != null and world.planet != null and not world.planet.legacy:
+		colors[BlockWorld.Block.GRASS] = world.planet.details.surface_color
+		colors[BlockWorld.Block.SOIL] = world.planet.details.soil_color
+		colors[BlockWorld.Block.STONE] = world.planet.details.rock_color
 	var atlas_size := BlockWorld.TILE_COLORS.size() - 1
 	var image := Image.create_empty(size * atlas_size, size, false, Image.FORMAT_RGBA8)
 	for i in atlas_size:
 		var block := i + 1
 		var x := i * size
-		var color := BlockWorld.TILE_COLORS[block]
+		var color := colors[block]
 		image.fill_rect(Rect2i(x, 0, size, size), color.darkened(0.23))
 		image.fill_rect(Rect2i(x + 1, 0, size - 2, size - 1), color)
 		if block == BlockWorld.Block.GRASS:
-			image.fill_rect(Rect2i(x + 1, 6, size - 2, size - 7), BlockWorld.TILE_COLORS[BlockWorld.Block.SOIL])
+			image.fill_rect(Rect2i(x + 1, 6, size - 2, size - 7), colors[BlockWorld.Block.SOIL])
 		elif block == BlockWorld.Block.ORE:
 			image.fill_rect(Rect2i(x + 7, 8, 7, 7), Color("#ebaa6d"))
 		elif block == BlockWorld.Block.ALLOY:
@@ -160,24 +239,4 @@ static func _make_tileset() -> TileSet:
 		elif block == BlockWorld.Block.BEACON:
 			image.fill_rect(Rect2i(x + 1, 0, size - 2, 4), Color("#f5cc89"))
 
-	var tiles := TileSet.new()
-	tiles.tile_size = Vector2i.ONE * size
-	tiles.add_physics_layer()
-	tiles.set_physics_layer_collision_layer(0, 1)
-	var source := TileSetAtlasSource.new()
-	source.texture = ImageTexture.create_from_image(image)
-	source.texture_region_size = tiles.tile_size
-	tiles.add_source(source, 0)
-
-	var half := size * 0.5
-	var shape := PackedVector2Array([
-		Vector2(-half, -half), Vector2(half, -half),
-		Vector2(half, half), Vector2(-half, half),
-	])
-	for i in atlas_size:
-		var coords := Vector2i(i, 0)
-		source.create_tile(coords)
-		var data := source.get_tile_data(coords, 0)
-		data.add_collision_polygon(0)
-		data.set_collision_polygon_points(0, 0, shape)
-	return tiles
+	_atlas.texture = ImageTexture.create_from_image(image)

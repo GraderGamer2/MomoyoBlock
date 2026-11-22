@@ -22,7 +22,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends scons libwayland-bin libwayland-egl1 libgl1-mesa-dri libegl-mesa0 weston
+      - name: Identify the native toolchain
+        id: native-toolchain
+        run: |
+          signature=$(dpkg-query -W gcc g++ binutils libc6-dev libwayland-bin | sha256sum | cut -d ' ' -f 1)
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+      - name: Cache the optimized Godot template
+        id: godot-template
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/godot-4.7.2/bin/godot.linuxbsd.template_release.x86_64
+          key: momoyo-godot-ubuntu24-x64-${{ steps.native-toolchain.outputs.signature }}-${{ hashFiles('tools/build-linux.sh', 'tools/momoyoblock_runtime.h', 'tools/godot-linux-runtime.patch') }}
       - name: Test, build, and package Linux
+        env:
+          MOMOYO_TEMPLATE_CACHE_HIT: ${{ steps.godot-template.outputs.cache-hit }}
         run: tools/build-linux.sh
       - name: Verify packaged Wayland window
         run: tools/test-package.sh dist/MomoyoBlock-linux-x86_64.tar.gz

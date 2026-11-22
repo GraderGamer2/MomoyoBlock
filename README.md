@@ -1,6 +1,6 @@
 # MomoyoBlock
 
-MomoyoBlock is a 2D side-view survival and building sandbox. Explore Cinder Reach, use Relay Nine to chart jumps to seeded planets, and build shelters while managing food, water, and suit oxygen. This alpha uses placeholder visuals.
+MomoyoBlock is a 2D side-view survival and building sandbox. Start on a generated planet, use Relay Nine to chart jumps across a seeded galaxy, and build shelters while managing food, water, and suit oxygen. This alpha uses placeholder visuals.
 
 ## Play on Linux x86_64 with Wayland
 
@@ -11,7 +11,7 @@ tar -xzf MomoyoBlock-linux-x86_64.tar.gz -C "$HOME"
 "$HOME/.MomoyoBlock/MomoyoBlock"
 ```
 
-Re-extracting the archive updates the game. Saves live at `~/.MomoyoBlock/profile/saves/expedition.save` and existing 0.1 expeditions load in 0.2. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
+Re-extracting the archive updates the game. Expeditions live under `~/.MomoyoBlock/profile/saves/`. Existing 0.1 and 0.2 expeditions keep their original planets. Choose **New expedition** from the main menu for a randomly generated starting planet in a separate save. **Continue expedition** opens the most recently saved slot, and **Load expedition** lets you pick another. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
 
 The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize.
 
@@ -31,7 +31,9 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
-Oxygen replenishes in breathable air and near a landing beacon. Vacuum and unbreathable atmospheres drain the tank. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
+Mine, build, and gather within two tiles of your explorer. Planets generate nearby terrain as you walk or dig. The HUD shows current weather and the direction back to the beacon. Oxygen replenishes in breathable air and near a landing beacon. Vacuum and unbreathable atmospheres drain the tank. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
+
+The star chart uses signed 32-bit coordinates per axis. A saved galaxy seed and generation revision reproduce each planet's name, terrain, and environmental properties. Saves store compact block and harvest changes for modified planets. They load full terrain for the nearby chunks during play.
 
 Use **Settings** from the title or pause menu. **Apply settings** saves the frame cap, VSync request, master volume, and renderer. FPS, VSync, and volume apply immediately. The compositor and graphics driver determine supported presentation modes. Renderer changes apply on the next launch. Launch with `--rendering-method gl_compatibility` to choose Compatibility for one session.
 
@@ -51,7 +53,7 @@ Use `tools/run-dev.sh` to play from source. Development uses `~/.MomoyoBlock/dev
 
 ## Build a playtest
 
-Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, curl, unzip, and patch. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. It embeds the game. The workflow also runs `tools/test-package.sh` with Weston and software graphics to verify that the Linux export creates a native Wayland window and presents frames.
+Run `tools/build-linux.sh` with GCC, SCons, Wayland’s scanner, curl, unzip, and patch. The script verifies upstream downloads and builds the Wayland-only Godot 4.7.2 release template with GCC `-O3` and full LTO. The workflow can reuse the optimized template when the engine inputs and toolchain match. It runs the gameplay tests and embeds the current game in each build. The workflow also runs `tools/test-package.sh` with Weston and software graphics to verify that the Linux export creates a native Wayland window and presents frames.
 
 The archive is written to `dist/MomoyoBlock-linux-x86_64.tar.gz`. Run the workflow on demand after gameplay changes. Updating its definition on `main` also starts a build.
 

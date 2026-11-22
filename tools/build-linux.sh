@@ -55,27 +55,31 @@ if [[ ! -f $source_dir/.momoyo-source-ready ]]; then
 	tar -xJf "$download_dir/$source_asset" -C "$source_dir" --strip-components=1
 	touch "$source_dir/.momoyo-source-ready"
 fi
-if ! grep -Fq '#include "momoyoblock_runtime.h"' "$source_dir/platform/linuxbsd/godot_linuxbsd.cpp"; then
-	patch --batch --forward -d "$source_dir" -p1 < tools/godot-linux-runtime.patch
-fi
-if ! cmp -s tools/momoyoblock_runtime.h "$source_dir/platform/linuxbsd/momoyoblock_runtime.h"; then
-	cp tools/momoyoblock_runtime.h "$source_dir/platform/linuxbsd/"
-fi
+if [[ ${MOMOYO_TEMPLATE_CACHE_HIT:-false} == true && -x $template ]]; then
+	printf '%s\n' 'Using the matching optimized Wayland export template.'
+else
+	if ! grep -Fq '#include "momoyoblock_runtime.h"' "$source_dir/platform/linuxbsd/godot_linuxbsd.cpp"; then
+		patch --batch --forward -d "$source_dir" -p1 < tools/godot-linux-runtime.patch
+	fi
+	if ! cmp -s tools/momoyoblock_runtime.h "$source_dir/platform/linuxbsd/momoyoblock_runtime.h"; then
+		cp tools/momoyoblock_runtime.h "$source_dir/platform/linuxbsd/"
+	fi
 
-accesskit_dir="$source_dir/bin/build_deps/accesskit-c-$accesskit"
-if [[ ! -f $accesskit_dir/.momoyo-sdk-ready ]]; then
-	fetch "https://github.com/godotengine/godot-accesskit-c-static/releases/download/$accesskit/accesskit-c-$accesskit.zip" \
-		"$download_dir/accesskit.zip" 41b30b1382d03b225b6f7e8721269a32557a68065804f3797bdffc34a3273498
-	mkdir -p "$source_dir/bin/build_deps"
-	unzip -oq "$download_dir/accesskit.zip" -d "$source_dir/bin/build_deps"
-	touch "$accesskit_dir/.momoyo-sdk-ready"
-fi
+	accesskit_dir="$source_dir/bin/build_deps/accesskit-c-$accesskit"
+	if [[ ! -f $accesskit_dir/.momoyo-sdk-ready ]]; then
+		fetch "https://github.com/godotengine/godot-accesskit-c-static/releases/download/$accesskit/accesskit-c-$accesskit.zip" \
+			"$download_dir/accesskit.zip" 41b30b1382d03b225b6f7e8721269a32557a68065804f3797bdffc34a3273498
+		mkdir -p "$source_dir/bin/build_deps"
+		unzip -oq "$download_dir/accesskit.zip" -d "$source_dir/bin/build_deps"
+		touch "$accesskit_dir/.momoyo-sdk-ready"
+	fi
 
-# Godot maps optimize=speed to -O3 and lto=full to GCC's -flto.
-command -v wayland-scanner >/dev/null
-scons --directory="$source_dir" --jobs="${MOMOYO_BUILD_JOBS:-4}" \
-	platform=linuxbsd target=template_release arch=x86_64 optimize=speed lto=full \
-	debug_symbols=no use_llvm=no x11=no wayland=yes "accesskit_sdk_path=$accesskit_dir"
+	# Godot maps optimize=speed to -O3 and lto=full to GCC's -flto.
+	command -v wayland-scanner >/dev/null
+	scons --directory="$source_dir" --jobs="${MOMOYO_BUILD_JOBS:-4}" \
+		platform=linuxbsd target=template_release arch=x86_64 optimize=speed lto=full \
+		debug_symbols=no use_llvm=no x11=no wayland=yes "accesskit_sdk_path=$accesskit_dir"
+fi
 test -x "$template"
 
 mkdir -p "$stage/.MomoyoBlock/licenses"

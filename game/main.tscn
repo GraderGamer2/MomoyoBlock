@@ -23,7 +23,7 @@ layer = -1
 [node name="Sky" type="Node2D" parent="Backdrop"]
 script = ExtResource("4")
 
-[node name="Terrain" type="TileMapLayer" parent="."]
+[node name="Terrain" type="Node2D" parent="."]
 script = ExtResource("2")
 
 [node name="Beacon" type="Node2D" parent="."]

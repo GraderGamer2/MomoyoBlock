@@ -13,6 +13,8 @@ var _location: Label
 var _status: Label
 var _travel: Label
 var _environment: Label
+var _weather: Label
+var _status_timeout: Timer
 var _supplies: Label
 var _meters: Array[ProgressBar] = []
 var _meter_values: Array[Label] = []
@@ -44,6 +46,11 @@ func _ready() -> void:
 	_status = _label("", 13, GREEN)
 	_status.hide()
 	heading.add_child(_status)
+	_status_timeout = Timer.new()
+	_status_timeout.one_shot = true
+	_status_timeout.wait_time = 4.0
+	add_child(_status_timeout)
+	_status_timeout.timeout.connect(_status.hide)
 
 	var spacer := Control.new()
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -56,7 +63,10 @@ func _ready() -> void:
 	var readings := VBoxContainer.new()
 	readings.add_theme_constant_override("separation", 4)
 	vitals.add_child(readings)
-	_environment = _label("", 12, AMBER)
+	_weather = _label("", 13, AMBER)
+	_weather.name = "CurrentWeather"
+	readings.add_child(_weather)
+	_environment = _label("", 12, MUTED)
 	readings.add_child(_environment)
 	var names := ["Health", "Hunger", "Thirst", "Oxygen"]
 	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf")]
@@ -85,7 +95,7 @@ func _ready() -> void:
 	_supplies = _label("", 13, GREEN)
 	readings.add_child(_supplies)
 
-	var legend := _label("A / D Move     Space Jump\nLeft click Mine     Right click Build\nF Gather     R Eat     T Drink\nF5 Save     Esc Pause", 13, PAPER)
+	var legend := _label("A / D Move     Space Jump\nLeft click Mine     Right click Build\nReach: 2 tiles     F Gather     R Eat     T Drink\nF5 Save     Esc Pause", 13, PAPER)
 	var controls := _panel()
 	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -120), Vector2(26, -20))
 	controls.add_child(legend)
@@ -138,10 +148,17 @@ func show_inventory(inventory: PackedInt32Array, selected: int) -> void:
 		_slot_panels[i].add_theme_stylebox_override("panel", _slot_styles[int(i == selected)])
 
 
-func show_travel(region: int, nearby: bool, planet_name: String) -> void:
-	var prompt := "Find the beacon to travel"
+func show_travel(region: int, nearby: bool, planet_name: String, direction: Vector2i) -> void:
+	var prompt: String
 	if nearby:
 		prompt = "E  Launch to Relay Nine" if region == BlockWorld.Region.SURFACE else "E  Return to %s   ·   M  Star Chart" % planet_name
+	else:
+		var vertical := "%d %s" % [absi(direction.y), "up" if direction.y < 0 else "down"]
+		var horizontal := "%d %s" % [absi(direction.x), "left" if direction.x < 0 else "right"]
+		var path := vertical if direction.x == 0 else horizontal
+		if direction.x != 0 and absi(direction.y) > 3:
+			path += ", " + vertical
+		prompt = "Beacon  %s tiles" % path
 	if _travel.text != prompt:
 		_travel.text = prompt
 
@@ -150,6 +167,7 @@ func show_status(message: String, saved: bool = true) -> void:
 	_status.text = message
 	_status.visible = not message.is_empty()
 	_status.modulate = Color.WHITE if saved else AMBER
+	_status_timeout.start()
 
 
 func set_transit_route(target: int, planet_name: String) -> void:
@@ -206,9 +224,12 @@ func show_survival(state: SurvivalState, air: String, weather: String) -> void:
 	var supplies := "Rations %d  ·  Water %d" % [state.food, state.water]
 	if _supplies.text != supplies:
 		_supplies.text = supplies
-	var conditions := "%s  ·  %s" % [weather, air]
-	if _environment.text != conditions:
-		_environment.text = conditions
+	var conditions := "Weather: %s" % weather if weather != "Orbit" else "Orbit"
+	if _weather.text != conditions:
+		_weather.text = conditions
+		_weather.modulate = Color("#f4bb87") if PlanetProfile.harsh_weather(weather) else Color.WHITE
+	if _environment.text != air:
+		_environment.text = air
 
 
 static func _meter_style(fill: Color) -> StyleBoxFlat:

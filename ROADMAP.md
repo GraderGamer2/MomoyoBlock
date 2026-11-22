@@ -2,26 +2,27 @@
 
 ## Game direction
 
-MomoyoBlock is an original, demanding 2D side-scrolling survival and building sandbox. The core loop is to explore on foot, gather supplies, build shelter or infrastructure, and survive long enough to make the next expedition possible. The Blockheads is a reference for hands-on side-view building. No Man’s Sky informs the procedural galaxy and planetary exploration, and Empyrion – Galactic Survival informs the need for useful ships, stations, and life support.
+MomoyoBlock is an original, demanding 2D side-scrolling survival and building sandbox. The loop is to explore on foot, gather supplies, build shelter or infrastructure, and survive long enough to make the next expedition possible. The Blockheads is a reference for hands-on side-view building. No Man’s Sky informs the procedural galaxy and planetary exploration, and Empyrion – Galactic Survival informs the need for useful ships, stations, and life support.
 
-Planets should feel different for practical reasons. The local gravity, atmosphere, climate, flora, and fauna should determine what supplies you bring, where you build, and how much time you can spend away from safety. Returning to a sector should take you back to the same planet and your previous construction.
+Gravity, atmosphere, climate, flora, and fauna should determine what supplies you bring, where you build, and how far you can travel away from safety. Every sector should be worth approaching on its own terms. Returning to a sector brings back its terrain and your construction.
 
-## 0.2 · Survival across sectors
+## 0.3 · Procedural expeditions
 
-- Travel through Relay Nine and pick a seeded planet by entering a sector address. The starter journey from sector 0, 0 to 1, 0 introduces suit oxygen.
-- Each address generates a planet from one of four initial profiles. The profiles vary terrain, gravity, atmosphere, edible plants, sources of water, ambient wildlife, and recurring weather.
-- Manage health, hunger, thirst, and suit oxygen. Collect and consume provisions, plan around weather and air, and return to a beacon to refill oxygen.
-- Save modified terrain and harvested forage per planet. Keep the orbital station and previous expeditions when upgrading.
+- Start on a randomly generated and named planet. Each expedition has its own galaxy seed, and every address can be generated on demand.
+- Explore past the original planet boundaries. The renderer and collision system load nearby chunks and recenter around the explorer as distances grow.
+- Discover planets with seeded weather patterns, terrain strata, forage, and ambient wildlife. Future ecosystems can build on generation by seed and stable sector address.
+- Track conditions, air, and the route back to your beacon in the HUD. Mine, build, and gather within two tiles.
+- Save each expedition’s seed and generator revision, plus terrain edits and harvested forage. Regions you visit without making changes need no terrain entries. Existing saves retain their previous galaxy and terrain.
 
-## Next · Habitats and preparation
+## Next · Tools, recipes, and habitats
 
-- Build sealed rooms and airlocks and connect them to power and oxygen equipment. Make constructed stations and shelters a way to survive away from beacons.
-- Add processing, storage, repair supplies, and weather-appropriate gear. Make collection and crafting matter before leaving a safe area.
-- Give wildlife distinct behavior, habitats, and relationships to the local plants. Add plant regrowth and storms that respond to climate and terrain.
+- Add a crafting inventory and a workbench. Start with recipes for tools, storage, and a portable source of oxygen. Tie recipes to supplies gathered from different environments.
+- Build sealed rooms and airlocks, add equipment for power and oxygen, and make habitats useful away from the beacons.
+- Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
 
-## Later · Ships and the procedural universe
+## Later · Vehicles and shipbuilding
 
-- Build launch vehicles, walkable ships, and expandable stations. Add in-flight choices about cargo, power, fuel, docking, and emergency returns.
-- Add more planetary systems and a galaxy map with discovery, navigation, and route planning. Generate scenery, species, climates, and hazards from independent seeds so worlds have a wider variety of combinations.
-- Expand planetary depth and width and preserve player construction, habitat state, and discoveries when moving between sectors.
-- Establish the texture, animation, and audio direction after testing the readability and pacing of the survival systems.
+- Build ground vehicles, launch vehicles, walkable ships, and expandable stations by combining blocks, machinery, and crafted parts.
+- Give constructed vehicles functional power, propulsion, fuel, cargo, and life support. Connect the consequences of preparation and damage to launch, docking, and emergency returns.
+- Add discovery and route planning across multiple systems. Grow the variety of independently generated scenery, species, climates, and hazards.
+- Establish textures, animation, and audio after testing the scale and pacing of survival and construction.
