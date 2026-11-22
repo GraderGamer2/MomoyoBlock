@@ -1,0 +1,13 @@
+--- a/platform/linuxbsd/godot_linuxbsd.cpp
++++ b/platform/linuxbsd/godot_linuxbsd.cpp
+@@ -33,2 +33,3 @@
+ #include "core/profiling/profiling.h"
+ #include "main/main.h"
++#include "momoyoblock_runtime.h"
+@@ -70,2 +71,6 @@
+ int main(int argc, char *argv[]) {
++	if (!MomoyoRuntime::prepare(argc, argv)) {
++		return EXIT_FAILURE;
++	}
++
+ #if defined(__x86_64) || defined(__x86_64__)

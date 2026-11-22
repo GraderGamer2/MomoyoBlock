@@ -1,0 +1,33 @@
+name: Linux x86_64 playtest
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out MomoyoBlock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build and display tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends scons libwayland-bin libgl1-mesa-dri xvfb xauth xdotool
+      - name: Test, build, and package Linux
+        run: tools/build-linux.sh
+      - name: Upload Linux playtest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/MomoyoBlock-linux-x86_64.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
