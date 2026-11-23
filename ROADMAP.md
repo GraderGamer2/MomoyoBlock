@@ -28,15 +28,27 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Let players deploy and recover field workbenches, smelt ore, craft tools, and repair suits away from Relay Nine.
 - Make suit integrity matter during storms and pressure exposure. Let players remove the suit and experience local air, pressure, and temperature directly.
 
+## 0.6 · Starter gear and decompression
+
+- Use a nine-slot hotbar and five suit pockets for blocks, equipment, and supplies. Upgrade the starter pulse tool through three levels.
+- Give the starter suit a short-burst jetpack and make EVA a cold environment.
+- Let a breached cabin vent over time. Airflow pulls loose objects toward an opening while a pressure difference remains. Repaired cabins repressurize.
+- Craft pressure glass, support frames, and insulation at workbenches. Use beacons for travel and shelter.
+
 ## Next · Habitats, storage, and ecology
 
 - Let players build sealed rooms and airlocks. Add power and oxygen equipment so habitats can support long expeditions away from the beacons.
-- Expand the workshop with material storage and recipes that use resources from different environments.
+- Add storage containers and more recipes that use resources from different environments.
 - Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
+
+## Later · Crafting grids and habitat fields
+
+- Replace the recipe buttons with an ingredient grid. Let players arrange stacks in a compact field grid or a larger workbench grid. Show the output and let it be taken into an inventory slot.
+- Add powered forcefields and habitat domes that enclose habitable air on hostile worlds. Use power capacity to determine coverage and let a failed field vent gradually.
 
 ## Later · Vehicles and shipbuilding
 
-- Build vehicles and ships by placing hull blocks, machinery, and crafted components by hand. Provide blueprints that guide manual construction or assemble and spawn a finished ship at a clear launch site once the required materials are supplied.
+- Build vehicles and ships by placing hull blocks, machinery, and crafted components by hand. Let players create and save their own blueprints, supply the listed materials, and assemble the finished ship at a clear launch site.
 - Give ships walkable interiors. Let the player leave the pilot seat and move between the cockpit, cargo bay, airlock, and life support while docked or in flight.
 - Let players launch from a planet and reach orbit in their own ships. Compare engine thrust with local gravity and the ship's loaded mass, including cargo and fuel. Show the thrust margin, power draw, and estimated fuel cost before launch.
 - Add functional power, fuel, cargo, and life support. Make damage and how the ship is loaded affect ascent, docking, and emergency returns.

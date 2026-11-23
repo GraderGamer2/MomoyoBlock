@@ -25,9 +25,8 @@ var _body_temperature: Label
 var _temperature_gauge: TemperatureGauge
 var _transit_title: Label
 var _transit_route: Label
-var _slot_panels: Array[PanelContainer] = []
-var _slot_labels: Array[Label] = []
-var _slot_styles: Array[StyleBoxFlat] = []
+var _held_item: Label
+var _slots: Array[InventorySlot] = []
 
 
 func _ready() -> void:
@@ -79,8 +78,8 @@ func _ready() -> void:
 	_atmosphere = _label("", 12, MUTED)
 	_atmosphere.name = "LocalAtmosphere"
 	readings.add_child(_atmosphere)
-	var names := ["Health", "Hunger", "Thirst", "Oxygen", "Suit"]
-	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf"), Color("#a5a9ed")]
+	var names := ["Health", "Hunger", "Thirst", "Oxygen", "Suit", "Jetpack"]
+	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf"), Color("#a5a9ed"), Color("#75c4d9")]
 	for i in names.size():
 		var row := HBoxContainer.new()
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -99,7 +98,7 @@ func _ready() -> void:
 		row.add_child(bar)
 		_meters.append(bar)
 		var value := _label("", 12, PAPER)
-		value.custom_minimum_size.x = 30
+		value.custom_minimum_size.x = 42
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(value)
 		_meter_values.append(value)
@@ -130,15 +129,15 @@ func _ready() -> void:
 	_supplies = _label("", 13, GREEN)
 	readings.add_child(_supplies)
 
-	var legend := _label("A / D Move     Space Jump\nHold left Pulse mine     Right click Build\nF Collect     C Craft     U Suit\nR Eat     T Drink     O Use air\nF5 Save     Esc Pause", 13, PAPER)
+	var legend := _label("A / D Move     Space Jump     Shift Jetpack\nHold left Mine     Right click Use / place\nF Collect     C Craft     Tab Inventory\nU Suit     R Eat     T Drink     O Use air\nF5 Save     Esc Pause", 13, PAPER)
 	var controls := _panel()
-	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -140), Vector2(26, -20))
+	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -202), Vector2(26, -82))
 	controls.add_child(legend)
 
 	var bar := VBoxContainer.new()
 	bar.alignment = BoxContainer.ALIGNMENT_END
 	bar.add_theme_constant_override("separation", 6)
-	_anchor(screen, bar, Control.PRESET_CENTER_BOTTOM, Vector2(-228, -138), Vector2(228, -20))
+	_anchor(screen, bar, Control.PRESET_CENTER_BOTTOM, Vector2(-330, -155), Vector2(330, -20))
 	_workshop = _label("", 14, GREEN)
 	_workshop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_workshop.hide()
@@ -146,19 +145,23 @@ func _ready() -> void:
 	_travel = _label("", 16, AMBER)
 	_travel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bar.add_child(_travel)
+	var held_card := _panel()
+	held_card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	bar.add_child(held_card)
+	_held_item = _label("", 12, PAPER)
+	_held_item.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	held_card.add_child(_held_item)
 	var slots := HBoxContainer.new()
 	slots.add_theme_constant_override("separation", 6)
 	bar.add_child(slots)
-	_slot_styles = [_style(Color("#395061")), _style(GREEN)]
-	for i in BlockWorld.MATERIAL_NAMES.size() + 1:
-		var panel := _panel()
-		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slots.add_child(panel)
-		_slot_panels.append(panel)
-		var label := _label("", 14, PAPER)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		panel.add_child(label)
-		_slot_labels.append(label)
+	for index in ExpeditionInventory.HOTBAR_SLOTS:
+		var slot := InventorySlot.new()
+		slot.slot_index = index
+		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.focus_mode = Control.FOCUS_NONE
+		slots.add_child(slot)
+		_slots.append(slot)
 
 	transit = ColorRect.new()
 	transit.color = Color("#0a1323")
@@ -185,13 +188,13 @@ func show_region(region: int, planet: PlanetProfile) -> void:
 	_location.text = planet.title() if on_surface else "Relay Nine"
 
 
-func show_inventory(inventory: PackedInt32Array, selected: int, workbenches: int) -> void:
-	for i in _slot_labels.size():
-		var is_bench := i == inventory.size()
-		var caption := "Workbench" if is_bench else BlockWorld.MATERIAL_NAMES[i]
-		var count := workbenches if is_bench else inventory[i]
-		_slot_labels[i].text = "%d  %s\n%d" % [i + 1, caption, count]
-		_slot_panels[i].add_theme_stylebox_override("panel", _slot_styles[int(i == selected)])
+func show_inventory(inventory: ExpeditionInventory, selected: int, pulse_level: int) -> void:
+	for i in _slots.size():
+		_slots[i].show_stack(inventory.item_at(i), inventory.quantity_at(i), i == selected)
+	var tool := "Starter pulse" if pulse_level == 0 else "Pulse level %d" % pulse_level
+	_held_item.text = "%s · %s tiles      %s" % [
+		tool, str(ExpeditionKit.PULSE_REACH_TILES[pulse_level]), ExpeditionInventory.item_name(inventory.item_at(selected)),
+	]
 
 
 func show_travel(region: int, nearby: bool, planet_name: String, direction: Vector2i) -> void:
@@ -277,18 +280,27 @@ static func _style(border: Color) -> StyleBoxFlat:
 	style.content_margin_bottom = 7
 	return style
 
-func show_survival(state: SurvivalState, kit: ExpeditionKit, air: String, weather: String,
+func show_survival(state: SurvivalState, inventory: ExpeditionInventory, air: String, weather: String,
 		atmosphere: String, pressure_warning: bool, temperature_target: float) -> void:
-	var levels := [state.health, state.hunger, state.thirst, state.oxygen, state.suit_integrity]
+	var levels := [state.health, state.hunger, state.thirst, state.oxygen, state.suit_integrity,
+		state.jetpack_fuel * 100.0 / SurvivalState.JETPACK_CAPACITY]
 	for i in _meters.size():
 		_meters[i].value = levels[i]
 		var value := str(ceili(levels[i]))
-		if i == levels.size() - 1:
+		if i == 4:
 			value += "%"
+		elif i == 5:
+			value = "%.1f s" % state.jetpack_fuel if state.suit_active() else "Off"
+			if state.suit_active() and state.jetpack_fuel == 0.0:
+				value = "Cooling" if state.jetpack_cooldown > 0.0 else "Charge"
 		if _meter_values[i].text != value:
 			_meter_values[i].text = value
 	_show_body_temperature(state.body_temperature, temperature_target)
-	var supplies := "Rations %d  ·  Water %d  ·  Air %d" % [state.food, state.water, kit.canisters]
+	var supplies := "Rations %d  ·  Water %d  ·  Air %d" % [
+		inventory.count(ExpeditionInventory.RATION, state.suit_equipped),
+		inventory.count(ExpeditionInventory.WATER, state.suit_equipped),
+		inventory.count(ExpeditionInventory.CANISTER, state.suit_equipped),
+	]
 	if _supplies.text != supplies:
 		_supplies.text = supplies
 	var conditions := "Weather: %s" % weather if weather != "Orbit" else "Orbit"

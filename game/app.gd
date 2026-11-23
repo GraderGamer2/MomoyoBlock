@@ -1,7 +1,7 @@
 class_name MomoyoApp
 extends Node
 
-enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD, WORKSHOP }
+enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD, WORKSHOP, INVENTORY }
 
 const EXPEDITION := preload("res://game/main.tscn")
 
@@ -11,6 +11,8 @@ var preferences := GamePreferences.new()
 
 var _settings_return := Screen.TITLE
 var _quit_confirmed := false
+var _inventory_slots: Array[InventorySlot] = []
+var _moving_slot := -1
 @onready var _ui: ShellUI = $Shell
 
 
@@ -31,13 +33,20 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("inventory") and screen in [Screen.EXPLORING, Screen.INVENTORY]:
+		get_viewport().set_input_as_handled()
+		if screen == Screen.EXPLORING:
+			show_inventory()
+		else:
+			resume_expedition()
+		return
 	if not event.is_action_pressed("ui_cancel"):
 		return
 	get_viewport().set_input_as_handled()
 	match screen:
 		Screen.EXPLORING:
 			show_pause()
-		Screen.PAUSED, Screen.STAR_CHART, Screen.WORKSHOP:
+		Screen.PAUSED, Screen.STAR_CHART, Screen.WORKSHOP, Screen.INVENTORY:
 			resume_expedition()
 		Screen.SETTINGS:
 			_leave_settings()
@@ -241,7 +250,7 @@ func show_workshop() -> void:
 	recipes.add_theme_constant_override("v_separation", 11)
 	body.add_child(recipes)
 	for recipe in ExpeditionKit.RECIPES.size():
-		if in_field and recipe != ExpeditionKit.Recipe.WORKBENCH:
+		if not game.kit.shows_recipe(recipe, in_field):
 			continue
 		var data: Dictionary = ExpeditionKit.RECIPES[recipe]
 		var card := VBoxContainer.new()
@@ -250,16 +259,14 @@ func show_workshop() -> void:
 		recipes.add_child(card)
 		card.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
 		var entry := "%s  ·  %s" % [data.name, ExpeditionKit.cost_text(recipe)]
-		if recipe == ExpeditionKit.Recipe.PROSPECTOR and game.kit.prospector or recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
+		if recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
 			entry = "%s  ·  Equipped" % data.name
-		if recipe == ExpeditionKit.Recipe.CANISTER:
-			entry += "  ·  %d/%d" % [game.kit.canisters, ExpeditionKit.MAX_CANISTERS]
 		var craft_button := _ui.button(entry, _craft.bind(recipe))
 		craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival)
 		card.add_child(craft_button)
 	var supplies := PackedStringArray()
-	for i in game.inventory.size():
-		supplies.append("%d %s" % [game.inventory[i], BlockWorld.MATERIAL_NAMES[i].to_lower()])
+	for item: int in BlockWorld.BUILD_MATERIALS:
+		supplies.append("%d %s" % [game.inventory.count(item, game.survival.suit_equipped), ExpeditionInventory.item_name(item).to_lower()])
 	body.add_child(_ui.label("Carried  " + "  ·  ".join(supplies), 13, ShellUI.MINT))
 	var back := _ui.button("Back to expedition", resume_expedition, true)
 	body.add_child(back)
@@ -271,7 +278,7 @@ func _craft(recipe: int) -> void:
 		show_workshop()
 		match recipe:
 			ExpeditionKit.Recipe.WORKBENCH:
-				_ui.show_feedback("Select slot 5 and right-click to deploy your workbench.")
+				_ui.show_feedback("Select the workbench in your hotbar, then right-click to deploy it.")
 			ExpeditionKit.Recipe.SMELT:
 				_ui.show_feedback("Smelted %d alloy." % ExpeditionKit.ALLOY_YIELD)
 			ExpeditionKit.Recipe.REPAIR:
@@ -280,6 +287,63 @@ func _craft(recipe: int) -> void:
 				_ui.show_feedback("Crafted %s" % ExpeditionKit.RECIPES[recipe].name)
 	else:
 		_ui.show_feedback("The recipe is unavailable.")
+
+
+func show_inventory() -> void:
+	if game == null:
+		return
+	screen = Screen.INVENTORY
+	get_tree().paused = true
+	_inventory_slots.clear()
+	_moving_slot = -1
+	var body := _ui.open_panel("Inventory", "Drag stacks or select two slots to move them.")
+	body.add_child(_ui.label("Hotbar", 15, ShellUI.MINT))
+	body.add_child(_inventory_row(0, ExpeditionInventory.HOTBAR_SLOTS))
+	var suit_title := "Suit storage" if game.survival.suit_equipped else "Suit storage · Suit off"
+	body.add_child(_ui.label(suit_title, 15, ShellUI.MINT))
+	body.add_child(_inventory_row(ExpeditionInventory.HOTBAR_SLOTS, ExpeditionInventory.SLOT_COUNT))
+	_refresh_inventory()
+	var back := _ui.button("Back to expedition", resume_expedition, true)
+	body.add_child(back)
+	_ui.finish_panel(_inventory_slots[game.selected])
+
+
+func _inventory_row(first: int, end: int) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	for index in range(first, end):
+		var slot := InventorySlot.new()
+		slot.slot_index = index
+		slot.pressed.connect(_select_inventory_slot.bind(index))
+		slot.moved_from.connect(_move_inventory.bind(index))
+		_inventory_slots.append(slot)
+		row.add_child(slot)
+	return row
+
+
+func _select_inventory_slot(index: int) -> void:
+	if _moving_slot == index:
+		_moving_slot = -1
+	elif _moving_slot >= 0:
+		_move_inventory(_moving_slot, index)
+		return
+	elif game.inventory.item_at(index) != BlockWorld.Block.EMPTY:
+		_moving_slot = index
+	_refresh_inventory()
+
+
+func _move_inventory(source: int, target: int) -> void:
+	if not game.move_inventory(source, target):
+		_ui.show_feedback("These stacks cannot be moved together.")
+	_moving_slot = -1
+	_refresh_inventory()
+
+
+func _refresh_inventory() -> void:
+	for index in _inventory_slots.size():
+		var locked := index >= ExpeditionInventory.HOTBAR_SLOTS and not game.survival.suit_equipped
+		_inventory_slots[index].show_stack(game.inventory.item_at(index), game.inventory.quantity_at(index),
+				index == _moving_slot, locked)
 
 
 func show_chart() -> void:

@@ -3,7 +3,6 @@ extends RefCounted
 
 const MAX_LEVEL := 100.0
 const TICK := 0.25
-const MAX_SUPPLIES := 99
 const VACUUM_DRAIN := 1.10
 const STORM_SURCHARGE := 0.20
 const HYPOXIA_DAMAGE := 4.0
@@ -22,6 +21,9 @@ const EXPOSURE_TIME := 65.0
 const STORM_EXPOSURE_TIME := 50.0
 const BARE_EXPOSURE_TIME := 27.0
 const BARE_STORM_EXPOSURE_TIME := 18.0
+const JETPACK_CAPACITY := 1.5
+const JETPACK_COOLDOWN := 1.25
+const JETPACK_RECHARGE := 1.0
 
 var health := MAX_LEVEL
 var hunger := MAX_LEVEL
@@ -30,12 +32,13 @@ var oxygen := MAX_LEVEL
 var suit_integrity := MAX_LEVEL
 var suit_equipped := true
 var body_temperature := NORMAL_BODY_TEMPERATURE
-var food := 2
-var water := 2
+var jetpack_fuel := JETPACK_CAPACITY
+var jetpack_cooldown := 0.0
 var elapsed := 0.0
+var _jetpack_running := false
 
 
-func advance(seconds: float, breathable: bool, storm_wear: float, pressure := CABIN_PRESSURE,
+func advance(seconds: float, breathable: bool, storm_wear: float, pressure: float = CABIN_PRESSURE,
 		temperature := CABIN_TEMPERATURE, reinforced := false) -> void:
 	elapsed += seconds
 	var harsh_weather := storm_wear > 0.0
@@ -64,7 +67,7 @@ func advance(seconds: float, breathable: bool, storm_wear: float, pressure := CA
 
 	var damage := pressure_strain * 0.020 * liner_factor
 	if not protected:
-		var extreme_pressure := maxi(0, 50 - pressure) + maxi(0, pressure - 155)
+		var extreme_pressure := maxf(0.0, 50.0 - pressure) + maxf(0.0, pressure - 155.0)
 		damage = extreme_pressure * 0.035 + storm_wear * 3.0
 	if not breathable:
 		if not protected:
@@ -93,23 +96,41 @@ func damage_suit(amount: float) -> void:
 		suit_integrity = maxf(0.0, suit_integrity - amount)
 
 
+func vacuum_exposure_temperature() -> float:
+	var protection := suit_integrity / MAX_LEVEL if suit_active() else 0.0
+	return lerpf(-55.0, -4.0, protection)
+
+
+func burn_jetpack(seconds: float, requested: bool, grounded: bool) -> float:
+	if requested and suit_active() and jetpack_fuel > 0.0 and (_jetpack_running or jetpack_fuel == JETPACK_CAPACITY):
+		var burn := minf(jetpack_fuel, seconds)
+		jetpack_fuel -= burn
+		_jetpack_running = jetpack_fuel > 0.0
+		jetpack_cooldown = JETPACK_COOLDOWN
+		return burn
+	_jetpack_running = false
+	var charging_time := maxf(0.0, seconds - jetpack_cooldown)
+	jetpack_cooldown = maxf(0.0, jetpack_cooldown - seconds)
+	if grounded and suit_active():
+		jetpack_fuel = minf(JETPACK_CAPACITY, jetpack_fuel + charging_time * JETPACK_RECHARGE)
+	return 0.0
+
+
 static func body_temperature_target(ambient: float) -> float:
 	var exposure := ambient - clampf(ambient, 12.0, 28.0)
 	return clampf(NORMAL_BODY_TEMPERATURE + exposure * 0.17, MIN_BODY_TEMPERATURE, MAX_BODY_TEMPERATURE)
 
 
 func eat() -> bool:
-	if food == 0 or hunger >= MAX_LEVEL:
+	if hunger >= MAX_LEVEL:
 		return false
-	food -= 1
 	hunger = minf(MAX_LEVEL, hunger + 38.0)
 	return true
 
 
 func drink() -> bool:
-	if water == 0 or thirst >= MAX_LEVEL:
+	if thirst >= MAX_LEVEL:
 		return false
-	water -= 1
 	thirst = minf(MAX_LEVEL, thirst + 48.0)
 	return true
 
@@ -122,15 +143,17 @@ func restore_after_rescue() -> void:
 	suit_equipped = true
 	suit_integrity = maxf(suit_integrity, RESCUE_SUIT_INTEGRITY)
 	body_temperature = NORMAL_BODY_TEMPERATURE
-	food = 1
-	water = 1
+	jetpack_fuel = JETPACK_CAPACITY
+	jetpack_cooldown = 0.0
+	_jetpack_running = false
 
 
 func snapshot() -> Dictionary:
 	return {
 		"health": health, "hunger": hunger, "thirst": thirst, "oxygen": oxygen,
 		"suit_integrity": suit_integrity, "suit_equipped": suit_equipped,
-		"body_temperature": body_temperature, "food": food, "water": water, "elapsed": elapsed,
+		"body_temperature": body_temperature, "elapsed": elapsed,
+		"jetpack_fuel": jetpack_fuel, "jetpack_cooldown": jetpack_cooldown,
 	}
 
 
@@ -142,8 +165,9 @@ func restore(data: Dictionary) -> void:
 	suit_integrity = data.suit_integrity
 	suit_equipped = data.suit_equipped
 	body_temperature = data.body_temperature
-	food = data.food
-	water = data.water
+	jetpack_fuel = data.jetpack_fuel
+	jetpack_cooldown = data.jetpack_cooldown
+	_jetpack_running = false
 	elapsed = data.elapsed
 
 
@@ -161,8 +185,9 @@ static func valid_snapshot(data: Variant) -> bool:
 			return false
 		if key != "elapsed" and value > MAX_LEVEL:
 			return false
-	for key in ["food", "water"]:
-		var count: Variant = data.get(key)
-		if not count is int or count < 0 or count > MAX_SUPPLIES:
+	var jet_limits := {"jetpack_fuel": JETPACK_CAPACITY, "jetpack_cooldown": JETPACK_COOLDOWN}
+	for key in jet_limits:
+		var value: Variant = data.get(key)
+		if not (value is float or value is int) or not is_finite(float(value)) or value < 0.0 or value > jet_limits[key]:
 			return false
 	return true

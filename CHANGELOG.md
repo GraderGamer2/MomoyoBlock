@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 · 2026-11-23
+
+- Added a nine-slot hotbar and five suit storage slots. Materials, workbenches, food, water, and spare air occupy movable stacks. Existing expeditions keep their inventory.
+- Increased the starter pulse range to 2.1 tiles and added three upgrade levels. The previous Prospector module becomes level 1.
+- Removed the workbench from the planetary beacon. Use field crafting to make a bench, or visit Relay Nine's workshop.
+- Added a 1.5-second starter jetpack burst, followed by a cooldown and a recharge on solid ground.
+- Started cold exposure on EVA. Hull breaches now vent gradually, pull the explorer and loose debris toward the opening, and allow life support to refill the cabin after repair.
+- Added pressure glass, support frames, and insulation. Glass seals hull openings. Insulation reduces heat and cold exposure under a roof.
+
 ## 0.5.0 · 2026-11-23
 
 - Derive planet gravity from seeded radius and rock composition. The HUD shows local gravity, and the star chart adds radius, mass, density, and composition. Relay Nine uses artificial gravity.

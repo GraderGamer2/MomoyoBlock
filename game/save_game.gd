@@ -8,7 +8,8 @@ const COMPACT_FORMAT := 3
 const STATION_REFIT_FORMAT := 4
 const TEMPERATURE_FORMAT := 5
 const FIELD_EQUIPMENT_FORMAT := 6
-const FORMAT := FIELD_EQUIPMENT_FORMAT
+const SLOTTED_FORMAT := 7
+const FORMAT := SLOTTED_FORMAT
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -89,32 +90,53 @@ func read() -> Dictionary:
 	loaded_format = state.format
 	if loaded_format < COMPACT_FORMAT:
 		state = _migrate_legacy(state)
-	if not state.is_empty() and loaded_format < FORMAT:
-		_upgrade_equipment(state)
-	if not _state_data_valid(state):
+	if state.is_empty() or (loaded_format < FORMAT and not _upgrade_equipment(state)) or not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
 	return state
 
 
-func _upgrade_equipment(state: Dictionary) -> void:
-	if loaded_format < STATION_REFIT_FORMAT:
-		state.kit = ExpeditionKit.new().snapshot()
-	elif loaded_format < FIELD_EQUIPMENT_FORMAT:
-		var kit: Variant = state.get("kit")
-		if kit is Dictionary:
-			kit["prospector"] = kit.get("pick")
-			kit.erase("pick")
-			kit["workbenches"] = 0
-
+func _upgrade_equipment(state: Dictionary) -> bool:
 	var vitals: Variant = state.get("vitals")
-	if vitals is Dictionary:
-		if loaded_format < TEMPERATURE_FORMAT:
-			vitals["body_temperature"] = SurvivalState.NORMAL_BODY_TEMPERATURE
-		if loaded_format < FIELD_EQUIPMENT_FORMAT:
-			vitals["suit_equipped"] = true
-			vitals["suit_integrity"] = SurvivalState.MAX_LEVEL
+	if not vitals is Dictionary or not _valid_old_count(vitals.get("food"), 99) or not _valid_old_count(vitals.get("water"), 99):
+		return false
+
+	var gear := ExpeditionKit.new().snapshot()
+	var canisters := 0
+	var benches := 0
+	if loaded_format >= STATION_REFIT_FORMAT:
+		var old: Variant = state.get("kit")
+		var tool_key := "prospector" if loaded_format >= FIELD_EQUIPMENT_FORMAT else "pick"
+		if not old is Dictionary or not old.get(tool_key) is bool or not old.get("liner") is bool \
+				or not _valid_old_count(old.get("canisters"), 6):
+			return false
+		gear.pulse_level = int(old[tool_key])
+		gear.liner = old.liner
+		canisters = old.canisters
+		if loaded_format >= FIELD_EQUIPMENT_FORMAT:
+			if not _valid_old_count(old.get("workbenches"), 99):
+				return false
+			benches = old.workbenches
+
+	var inventory := ExpeditionInventory.from_legacy(state.inventory, benches, vitals.food, vitals.water, canisters)
+	state.inventory = inventory.snapshot()
+	state.kit = gear
+	vitals.erase("food")
+	vitals.erase("water")
+	if loaded_format < TEMPERATURE_FORMAT:
+		vitals["body_temperature"] = SurvivalState.NORMAL_BODY_TEMPERATURE
+	if loaded_format < FIELD_EQUIPMENT_FORMAT:
+		vitals["suit_equipped"] = true
+		vitals["suit_integrity"] = SurvivalState.MAX_LEVEL
+	vitals["jetpack_fuel"] = SurvivalState.JETPACK_CAPACITY
+	vitals["jetpack_cooldown"] = 0.0
+	state.cabin_pressure = float(SurvivalState.CABIN_PRESSURE)
 	state.format = FORMAT
+	return true
+
+
+static func _valid_old_count(value: Variant, limit: int) -> bool:
+	return value is int and value >= 0 and value <= limit
 
 
 func write(state: Dictionary) -> Error:
@@ -156,13 +178,18 @@ static func _state_header_valid(state: Variant) -> bool:
 	if not point is Vector2 or not point.is_finite():
 		return false
 	var inventory: Variant = state.get("inventory")
-	if not inventory is PackedInt32Array or inventory.size() != BlockWorld.BUILD_MATERIALS.size():
-		return false
-	for count in inventory:
-		if count < 0:
+	var slots := ExpeditionInventory.HOTBAR_SLOTS
+	if format >= SLOTTED_FORMAT:
+		if not ExpeditionInventory.valid_snapshot(inventory):
 			return false
+	else:
+		if not inventory is PackedInt32Array or inventory.size() != BlockWorld.BUILD_MATERIALS.size():
+			return false
+		for count in inventory:
+			if count < 0:
+				return false
+		slots = inventory.size() + int(format >= FIELD_EQUIPMENT_FORMAT)
 	var selected: Variant = state.get("selected")
-	var slots: int = inventory.size() + int(format >= FIELD_EQUIPMENT_FORMAT)
 	return selected is int and selected >= 0 and selected < slots
 
 
@@ -181,6 +208,8 @@ static func _migrate_legacy(state: Dictionary) -> Dictionary:
 		state.planets = {Vector2i.ZERO: {"blocks": edits[0], "harvested": {}}}
 		state.station = {"blocks": edits[1], "harvested": {}}
 		state.vitals = SurvivalState.new().snapshot()
+		state.vitals["food"] = 2
+		state.vitals["water"] = 2
 		state.erase("edits")
 
 	var planets: Variant = state.get("planets")
@@ -219,6 +248,9 @@ static func _state_data_valid(state: Dictionary) -> bool:
 	if not state.get("sector") is Vector2i or not planets is Dictionary:
 		return false
 	if not SurvivalState.valid_snapshot(state.get("vitals")) or not ExpeditionKit.valid_snapshot(state.get("kit")):
+		return false
+	var pressure: Variant = state.get("cabin_pressure")
+	if not (pressure is int or pressure is float) or not is_finite(float(pressure)) or pressure < 0.0 or pressure > SurvivalState.CABIN_PRESSURE:
 		return false
 	var station: Variant = state.get("station")
 	if not station is PackedByteArray or TerrainJournal.unpack(station, false).is_empty():

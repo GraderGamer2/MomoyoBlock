@@ -2,7 +2,10 @@ class_name BlockWorld
 extends RefCounted
 
 enum Region { SURFACE, STATION }
-enum Block { EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL, WORKBENCH }
+enum Block {
+	EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL, WORKBENCH,
+	GLASS, FRAME, INSULATION,
+}
 
 const CHUNK_BITS := 5
 const CHUNK_SIZE := 1 << CHUNK_BITS
@@ -16,17 +19,20 @@ const STATION_CABIN := Rect2i(-18, PAD_ROW - 6, 27, 6)
 const STATION_HATCH := Vector2i(STATION_CABIN.end.x, PAD_ROW - 3)
 const STATION_WORKBENCH := Vector2i(-9, PAD_ROW - 1)
 const STATION_HULL := Rect2i(-19, PAD_ROW - 7, 44, 11)
+const STATION_PRESSURE_AREA := Rect2i(-21, PAD_ROW - 9, 48, 15)
 const STATION_RESCUE_ROW := 56
 const STATION_GRAVITY_PX := 510.0
-const MATERIAL_LIMIT := 2147483647
 const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block.ORE]
-const MATERIAL_NAMES: Array[String] = ["Soil", "Stone", "Alloy", "Ore"]
-const BLOCK_NAMES := ["Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone", "Pressure hull", "Workbench"]
-const MINING_SECONDS := [0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0]
+const BLOCK_NAMES := [
+	"Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone",
+	"Pressure hull", "Workbench", "Pressure glass", "Support frame", "Insulation",
+]
+const MINING_SECONDS := [0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0, 1.38, 1.72, 0.86]
 const TILE_COLORS: Array[Color] = [
 	Color.TRANSPARENT, Color("#aacea1"), Color("#856252"), Color("#50536e"),
 	Color("#6f8d9d"), Color("#60768b"), Color("#43696b"), Color("#bca474"),
 	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"), Color("#53736f"),
+	Color("#53a6ad"), Color("#96764f"), Color("#a76d5b"),
 ]
 
 var region: int
@@ -142,6 +148,10 @@ static func is_valid_edit(material: int) -> bool:
 	return material >= Block.EMPTY and material < TILE_COLORS.size() and material != Block.BEACON
 
 
+static func is_placeable(material: int) -> bool:
+	return material in BUILD_MATERIALS or (material >= Block.WORKBENCH and material < TILE_COLORS.size())
+
+
 static func mined_material(material: int) -> int:
 	match material:
 		Block.GRASS, Block.SAND:
@@ -153,11 +163,9 @@ static func mined_material(material: int) -> int:
 	return material
 
 
-static func mining_time(material: int, prospector: bool) -> float:
+static func mining_time(material: int, power := 1.0) -> float:
 	var seconds: float = MINING_SECONDS[material]
-	if prospector and seconds >= 1.0:
-		seconds /= 1.7
-	return seconds
+	return seconds / power if seconds >= 1.0 else seconds
 
 
 func surface_row(x: int) -> int:
@@ -214,17 +222,56 @@ func _station_structure(cell: Vector2i) -> int:
 	return Block.EMPTY
 
 
-func station_cabin_sealed() -> bool:
+func station_breaches() -> Array[Vector2i]:
+	var breaches: Array[Vector2i] = []
 	var shell := STATION_CABIN.grow(1)
 	for x in range(shell.position.x, shell.end.x):
-		if not _pressure_rated(Vector2i(x, shell.position.y)) or not _pressure_rated(Vector2i(x, shell.end.y - 1)):
-			return false
+		for y in [shell.position.y, shell.end.y - 1]:
+			var cell := Vector2i(x, y)
+			if not _pressure_rated(cell):
+				breaches.append(cell)
 	for y in range(STATION_CABIN.position.y, STATION_CABIN.end.y):
-		if not _pressure_rated(Vector2i(shell.position.x, y)):
-			return false
-		if y < STATION_HATCH.y and not _pressure_rated(Vector2i(STATION_HATCH.x, y)):
-			return false
-	return true
+		var left := Vector2i(shell.position.x, y)
+		var right := Vector2i(STATION_HATCH.x, y)
+		if not _pressure_rated(left):
+			breaches.append(left)
+		if y < STATION_HATCH.y and not _pressure_rated(right):
+			breaches.append(right)
+	if breaches.is_empty():
+		return breaches
+	var exterior := _station_vacuum()
+	var open: Array[Vector2i] = []
+	for cell in breaches:
+		if exterior.has(cell):
+			open.append(cell)
+	return open
+
+
+func _station_vacuum() -> Dictionary[Vector2i, bool]:
+	var bounds := STATION_PRESSURE_AREA
+	var open: Dictionary[Vector2i, bool] = {}
+	var frontier: Array[Vector2i] = []
+	for x in range(bounds.position.x, bounds.end.x):
+		frontier.append(Vector2i(x, bounds.position.y))
+		frontier.append(Vector2i(x, bounds.end.y - 1))
+	for y in range(bounds.position.y + 1, bounds.end.y - 1):
+		frontier.append(Vector2i(bounds.position.x, y))
+		frontier.append(Vector2i(bounds.end.x - 1, y))
+	var cardinal := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+	var read := 0
+	while read < frontier.size():
+		var cell := frontier[read]
+		read += 1
+		if open.has(cell) or STATION_CABIN.has_point(cell) or _pressure_rated(cell):
+			continue
+		if cell.x == STATION_HATCH.x and cell.y >= STATION_HATCH.y and cell.y < PAD_ROW:
+			continue
+		open[cell] = true
+		for direction: Vector2i in cardinal:
+			var neighbor := cell + direction
+			if bounds.has_point(neighbor) and not open.has(neighbor):
+				frontier.append(neighbor)
+	return open
 
 
 func station_arrival() -> Vector2:
@@ -239,7 +286,7 @@ func station_arrival() -> Vector2:
 
 func _pressure_rated(cell: Vector2i) -> bool:
 	var block := _station_block_at(cell)
-	return block == Block.ALLOY or block == Block.HULL or block == Block.BEACON
+	return block == Block.ALLOY or block == Block.HULL or block == Block.BEACON or block == Block.GLASS
 
 
 func _station_block_at(cell: Vector2i) -> int:

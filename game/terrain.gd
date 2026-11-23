@@ -1,6 +1,8 @@
 class_name ActiveTerrain
 extends Node2D
 
+signal block_changed(cell: Vector2i)
+
 const RADIUS := 1
 const REBASE_DISTANCE := BlockWorld.CHUNK_SIZE * BlockWorld.TILE_SIZE * 12
 const CELL_CENTER := Vector2(0.5, 0.5)
@@ -94,12 +96,15 @@ func set_block(cell: Vector2i, material: int) -> void:
 	var key := BlockWorld.chunk_at(cell)
 	var cells := _loaded[key]
 	var index := _index(cell, key)
+	if cells[index] == material:
+		return
 	cells[index] = material
 	_loaded[key] = cells
 	world.record_edit(cell, material)
 	_paint(_layer_for(key), _cell_offset(index), material)
 	if world.planet != null and absi(cell.y - world.surface_row(cell.x)) <= 1:
 		_refresh_forage()
+	block_changed.emit(cell)
 
 
 func nearest_forage(point: Vector2, range_squared: float) -> Variant:
@@ -289,5 +294,18 @@ func _paint_atlas() -> void:
 			image.fill_rect(Rect2i(x + 4, 11, 9, 6), Color("#37585e"))
 			image.fill_rect(Rect2i(x + 15, 10, 5, 4), Color("#a0e0ba"))
 			image.fill_rect(Rect2i(x + 4, 19, size - 8, 1), Color("#4f7377"))
+		elif block == BlockWorld.Block.GLASS:
+			image.fill_rect(Rect2i(x + 2, 2, size - 4, size - 4), Color(0.19, 0.58, 0.66, 0.32))
+			image.fill_rect(Rect2i(x + 4, 5, size - 8, 1), Color("#9ddadf"))
+			image.fill_rect(Rect2i(x + 5, 9, 4, 1), Color("#7bbac7"))
+		elif block == BlockWorld.Block.FRAME:
+			image.fill_rect(Rect2i(x + 3, 3, size - 6, size - 6), Color.TRANSPARENT)
+			for rail in range(4, size - 5, 2):
+				image.fill_rect(Rect2i(x + rail, rail, 3, 3), color)
+				image.fill_rect(Rect2i(x + size - rail - 3, rail, 3, 3), color.lightened(0.16))
+		elif block == BlockWorld.Block.INSULATION:
+			image.fill_rect(Rect2i(x + 3, 3, size - 6, size - 7), Color("#483745"))
+			for stripe in 3:
+				image.fill_rect(Rect2i(x + 5, 5 + stripe * 5, size - 10, 3), color.lightened(0.12))
 
 	_atlas.texture = ImageTexture.create_from_image(image)
