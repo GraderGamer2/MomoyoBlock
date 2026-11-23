@@ -3,7 +3,8 @@ extends Node2D
 
 signal block_changed(cell: Vector2i)
 
-const RADIUS := 1
+const CHUNK_PIXELS := BlockWorld.CHUNK_SIZE * BlockWorld.TILE_SIZE
+const VIEW_MARGIN := Vector2(96, 96)
 const REBASE_DISTANCE := BlockWorld.CHUNK_SIZE * BlockWorld.TILE_SIZE * 12
 const CELL_CENTER := Vector2(0.5, 0.5)
 
@@ -13,7 +14,8 @@ var forage := ForageLayer.new()
 var _loaded: Dictionary[Vector2i, PackedByteArray] = {}
 var _layers: Dictionary[Vector2i, TileMapLayer] = {}
 var _idle_layers: Array[TileMapLayer] = []
-var _center := Vector2i.ZERO
+var _loaded_area := Rect2i()
+var _radius := Vector2i.ONE
 var _tiles := TileSet.new()
 var _atlas := TileSetAtlasSource.new()
 
@@ -22,6 +24,8 @@ func _ready() -> void:
 	_create_tileset()
 	forage.z_index = 1
 	add_child(forage)
+	get_viewport().size_changed.connect(_update_stream_radius)
+	_update_stream_radius()
 
 
 func open_region(new_world: BlockWorld, point: Vector2, origin := Vector2i.ZERO) -> void:
@@ -65,11 +69,10 @@ func rebase_if_needed(point: Vector2) -> Vector2:
 
 func stream_around(point: Vector2) -> void:
 	var center := BlockWorld.chunk_at(world_cell(point))
-	if center == _center and not _loaded.is_empty():
+	var area := Rect2i(center - _radius, _radius * 2 + Vector2i.ONE)
+	if area == _loaded_area and not _loaded.is_empty():
 		return
-	_center = center
-	var radius := Vector2i(RADIUS, RADIUS)
-	var area := Rect2i(center - radius, radius * 2 + Vector2i.ONE)
+	_loaded_area = area
 	for key in _loaded.keys():
 		if not area.has_point(key):
 			_unload(key)
@@ -79,6 +82,11 @@ func stream_around(point: Vector2) -> void:
 			if not _loaded.has(key):
 				_load(key)
 	_refresh_forage()
+
+
+func _update_stream_radius() -> void:
+	var extent := get_viewport_rect().size * 0.5 + VIEW_MARGIN
+	_radius = Vector2i((extent / CHUNK_PIXELS).ceil()).max(Vector2i.ONE)
 
 
 func is_editable(cell: Vector2i) -> bool:
@@ -178,8 +186,8 @@ func _refresh_forage() -> void:
 	forage.origin_cell = origin_cell
 	forage.planet = world.planet
 	if world.planet != null:
-		var start := (_center.x - RADIUS) * BlockWorld.CHUNK_SIZE
-		var end := (_center.x + RADIUS + 1) * BlockWorld.CHUNK_SIZE
+		var start := _loaded_area.position.x * BlockWorld.CHUNK_SIZE
+		var end := _loaded_area.end.x * BlockWorld.CHUNK_SIZE
 		for x in range(start, end):
 			var kind := world.forage_kind(x)
 			if kind == 0:

@@ -13,6 +13,7 @@ var _settings_return := Screen.TITLE
 var _quit_confirmed := false
 var _inventory_slots: Array[InventorySlot] = []
 var _moving_slot := -1
+var _workshop_tab := 0
 @onready var _ui: ShellUI = $Shell
 
 
@@ -24,12 +25,22 @@ func _ready() -> void:
 		return
 	if display == "Wayland":
 		get_window().min_size = Vector2i(640, 360)
+	get_window().size_changed.connect(_fit_window_content, CONNECT_DEFERRED)
+	_fit_window_content()
 	get_tree().auto_accept_quit = false
 	get_tree().quit_on_go_back = false
 	preferences.load_settings()
 	preferences.apply_live()
 	_ui.close_pressed.connect(request_quit)
 	show_title()
+
+
+func _fit_window_content() -> void:
+	var window := get_window()
+	var fit := Vector2(window.size) / Vector2(window.content_scale_size)
+	var scale := minf(1.0, minf(fit.x, fit.y))
+	if scale > 0.0 and not is_equal_approx(window.content_scale_factor, scale):
+		window.content_scale_factor = scale
 
 
 func _input(event: InputEvent) -> void:
@@ -242,35 +253,66 @@ func show_workshop() -> void:
 	var workbench := game.workbench_name()
 	var in_field := workbench.is_empty()
 	var caption := "Field crafting" if in_field else workbench
-	var subtitle := "Deploy a workbench to unlock equipment and repairs." if in_field else "Craft equipment and service your suit."
+	var subtitle := "Deploy a workbench to unlock equipment and repairs." if in_field else ""
 	var body := _ui.open_panel(caption, subtitle)
-	var recipes := GridContainer.new()
-	recipes.columns = 1 if in_field else 3
-	recipes.add_theme_constant_override("h_separation", 14)
-	recipes.add_theme_constant_override("v_separation", 11)
-	body.add_child(recipes)
-	for recipe in ExpeditionKit.RECIPES.size():
-		if not game.kit.shows_recipe(recipe, in_field):
-			continue
-		var data: Dictionary = ExpeditionKit.RECIPES[recipe]
-		var card := VBoxContainer.new()
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.add_theme_constant_override("separation", 3)
-		recipes.add_child(card)
-		card.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
-		var entry := "%s  ·  %s" % [data.name, ExpeditionKit.cost_text(recipe)]
-		if recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
-			entry = "%s  ·  Equipped" % data.name
-		var craft_button := _ui.button(entry, _craft.bind(recipe))
-		craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival)
-		card.add_child(craft_button)
+	var focus: Control
+	if in_field:
+		body.add_child(_recipe_row(ExpeditionKit.Recipe.WORKBENCH))
+	else:
+		var tabs := _workshop_categories()
+		body.add_child(tabs)
+		focus = tabs.get_tab_bar()
 	var supplies := PackedStringArray()
 	for item: int in BlockWorld.BUILD_MATERIALS:
 		supplies.append("%d %s" % [game.inventory.count(item, game.survival.suit_equipped), ExpeditionInventory.item_name(item).to_lower()])
 	body.add_child(_ui.label("Carried  " + "  ·  ".join(supplies), 13, ShellUI.MINT))
 	var back := _ui.button("Back to expedition", resume_expedition, true)
 	body.add_child(back)
-	_ui.finish_panel(back)
+	_ui.finish_panel(focus if focus != null else back)
+
+
+func _workshop_categories() -> TabContainer:
+	var tabs := _ui.tabs()
+	tabs.name = "RecipeCategories"
+	var lists: Array[VBoxContainer] = []
+	for caption: String in ExpeditionKit.CATEGORY_NAMES:
+		var recipes := VBoxContainer.new()
+		recipes.name = caption
+		recipes.add_theme_constant_override("separation", 8)
+		tabs.add_child(recipes)
+		lists.append(recipes)
+	for recipe in ExpeditionKit.RECIPES.size():
+		if game.kit.shows_recipe(recipe, false):
+			lists[ExpeditionKit.RECIPES[recipe].category].add_child(_recipe_row(recipe))
+	if game.kit.pulse_level == ExpeditionKit.MAX_PULSE_LEVEL:
+		lists[ExpeditionKit.Category.TOOLS].add_child(_ui.label("Starter pulse fully upgraded.", 14, ShellUI.MINT))
+	tabs.current_tab = _workshop_tab
+	tabs.tab_changed.connect(func(tab: int) -> void: _workshop_tab = tab)
+	return tabs
+
+
+func _recipe_row(recipe: int) -> HBoxContainer:
+	var data: Dictionary = ExpeditionKit.RECIPES[recipe]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	var details := VBoxContainer.new()
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	details.add_theme_constant_override("separation", 2)
+	details.add_child(_ui.label(data.name, 16))
+	details.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
+	row.add_child(details)
+	var action := "Craft"
+	if recipe == ExpeditionKit.Recipe.REPAIR:
+		action = "Repair"
+	elif data.category == ExpeditionKit.Category.TOOLS:
+		action = "Upgrade"
+	var entry := "%s  ·  %s" % [action, ExpeditionKit.cost_text(recipe)]
+	if recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
+		entry = "Equipped"
+	var craft_button := _ui.button(entry, _craft.bind(recipe))
+	craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival)
+	row.add_child(craft_button)
+	return row
 
 
 func _craft(recipe: int) -> void:

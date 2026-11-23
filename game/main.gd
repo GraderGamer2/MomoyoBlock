@@ -10,6 +10,8 @@ const WORKBENCH_REACH := 54.0
 const BEACON_RANGE_SQUARED := 54.0 * 54.0
 const PULSE_INTERVAL := 0.22
 const PULSE_FLASH_TIME := 0.08
+const DESCENT_CLEARANCE_TILES := 8
+const DESCENT_ENTRY_SPEED := 260.0
 const CURSOR_VALID := Color("#f9d688")
 const CURSOR_OUTSIDE := Color(0.91, 0.94, 0.97, 0.3)
 
@@ -105,15 +107,11 @@ func _physics_process(delta: float) -> void:
 			_pulse.hide()
 	var rebased := _rebase_explorer()
 	var cell := terrain.world_cell(explorer.position)
-	if region == BlockWorld.Region.STATION and cell.y >= BlockWorld.STATION_RESCUE_ROW:
-		survival.health = maxf(0.0, survival.health - 25.0)
-		survival.damage_suit(20.0)
-		if survival.health == 0.0:
-			_rescue()
-		else:
-			_open_region(region, _arrival_point(region))
-			_hud.show_status("Recovered at the beacon. Impact cost 25 health.", false)
-		cell = terrain.world_cell(explorer.position)
+	if region == BlockWorld.Region.STATION:
+		if cell.y >= BlockWorld.STATION_DESCENT_ROW:
+			_start_travel(BlockWorld.Region.SURFACE, sector, true)
+			return
+		_update_orbital_gravity()
 	terrain.stream_around(explorer.position)
 	if region == BlockWorld.Region.STATION:
 		_apply_station_airflow()
@@ -485,27 +483,33 @@ func _travel(address: Vector2i) -> bool:
 	if _in_transit or not _at_beacon():
 		return false
 	var destination := BlockWorld.Region.STATION if region == BlockWorld.Region.SURFACE else BlockWorld.Region.SURFACE
+	_start_travel(destination, address)
+	return true
+
+
+func _start_travel(destination: int, address: Vector2i, falling := false) -> void:
 	_in_transit = true
 	cancel_mining()
 	explorer.set_physics_process(false)
 	_cursor.hide()
 	var planet_name := surface.planet.title() if address == sector else PlanetProfile.new(address, universe_seed).title()
-	_hud.set_transit_route(destination, planet_name)
+	_hud.set_transit_route(destination, planet_name, falling)
 	_hud.transit.show()
 	var flight := create_tween()
 	flight.tween_property(_hud.transit, "modulate:a", 1.0, 0.35)
 	flight.tween_interval(0.50)
-	flight.tween_callback(_arrive.bind(destination, address))
+	flight.tween_callback(_arrive.bind(destination, address, falling))
 	flight.tween_property(_hud.transit, "modulate:a", 0.0, 0.35)
 	flight.tween_callback(_finish_travel)
-	return true
 
 
-func _arrive(destination: int, address: Vector2i) -> void:
+func _arrive(destination: int, address: Vector2i, falling: bool) -> void:
 	if address != sector:
 		_remember_planet()
 		_load_planet(address)
-	_open_region(destination, _arrival_point(destination))
+	_open_region(destination, _surface_descent_point() if falling else _arrival_point(destination))
+	if falling:
+		explorer.velocity.y = DESCENT_ENTRY_SPEED
 
 
 func _finish_travel() -> void:
@@ -524,10 +528,12 @@ func _open_region(next_region: int, point: Vector2, origin := Vector2i.ZERO) -> 
 	explorer.position = point
 	explorer.velocity = Vector2.ZERO
 	explorer.airflow = Vector2.ZERO
-	explorer.gravity = surface.planet.gravity_g * PlanetProfile.EARTH_GRAVITY_PX \
-			if region == BlockWorld.Region.SURFACE else BlockWorld.STATION_GRAVITY_PX
 	explorer.force_update_transform()
 	terrain.open_region(surface if region == BlockWorld.Region.SURFACE else station, point, origin)
+	if region == BlockWorld.Region.STATION:
+		_update_orbital_gravity()
+	else:
+		explorer.gravity = surface.planet.gravity_g * PlanetProfile.EARTH_GRAVITY_PX
 	_load_habitats()
 	_update_beacon()
 	_station_art.visible = region == BlockWorld.Region.STATION
@@ -538,6 +544,16 @@ func _open_region(next_region: int, point: Vector2, origin := Vector2i.ZERO) -> 
 	_hud.show_region(region, surface.planet)
 	_update_travel()
 	_update_survival_display()
+
+
+func _orbital_pull() -> float:
+	return surface.planet.gravity_g * PlanetProfile.EARTH_GRAVITY_PX * BlockWorld.ORBITAL_GRAVITY_FRACTION
+
+
+func _update_orbital_gravity() -> void:
+	var tile_position := explorer.position / BlockWorld.TILE_SIZE + Vector2(terrain.origin_cell)
+	var strength := BlockWorld.station_gravity_strength(tile_position)
+	explorer.gravity = lerpf(_orbital_pull(), BlockWorld.STATION_GRAVITY_PX, strength)
 
 
 func _rescue() -> void:
@@ -634,9 +650,8 @@ func _update_survival_display(seconds := 0.0) -> void:
 			_rescue()
 			return
 
-	var airless := not on_surface and not breathable and (not survival.suit_active() or survival.oxygen <= 0.0)
-	if not airless:
-		survival.vacuum_exposure = 0.0
+	var breathing := survival.has_breathing_air(breathable)
+	var airless := (not on_surface or pressure == 0.0) and not breathing
 	if airless:
 		var remaining := SurvivalState.VACUUM_GRACE - survival.vacuum_exposure
 		air = "No oxygen · %d s grace" % ceili(remaining) if remaining > 0.0 else "No oxygen · Losing health"
@@ -649,6 +664,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	explorer.show_suit(survival.suit_equipped, survival.suit_integrity == 0.0)
 	if not on_surface:
 		_station_art.show_integrity(cabin.breaches.is_empty() and cabin.pressure >= SurvivalState.CABIN_PRESSURE - 1.0)
+		_hud.show_orbital_gravity(explorer.gravity, explorer.gravity > _orbital_pull())
 	_weather.set_front(front, surface.planet.wind)
 	var weather_text := front if not front.is_empty() else "Clear"
 	var environment := "Cabin %.0f kPa" % cabin.pressure if inside else "Vacuum · Cold exposure"
@@ -660,6 +676,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 			(on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT) or
 			(inside and not cabin.breaches.is_empty()),
 			SurvivalState.body_temperature_target(temperature))
+	_hud.show_vacuum_recovery(survival, breathing)
 
 
 func _overhead_block() -> int:
@@ -673,6 +690,16 @@ func _overhead_block() -> int:
 
 func _arrival_point(destination: int) -> Vector2:
 	return station.station_arrival() if destination == BlockWorld.Region.STATION else BlockWorld.pad_position()
+
+
+func _surface_descent_point() -> Vector2:
+	var cell := Vector2i(0, BlockWorld.PAD_ROW)
+	var empty_rows := 0
+	while empty_rows < DESCENT_CLEARANCE_TILES:
+		cell.y -= 1
+		empty_rows = empty_rows + 1 if surface.material_at(cell) == BlockWorld.Block.EMPTY else 0
+	# Leave an empty tile above the explorer's center for the collision shape.
+	return BlockWorld.pad_position() + Vector2(0.0, (cell.y + 2 - BlockWorld.PAD_ROW) * BlockWorld.TILE_SIZE)
 
 
 func _in_cabin() -> bool:

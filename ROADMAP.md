@@ -41,10 +41,17 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Let players build small sealed rooms, cycle airlocks, and commission floor-mounted oxygen recyclers.
 - Persist habitat air across trips and saves. Breaches vent and repaired rooms refill over time.
 
+## 0.8 · Orbital descent and workbench categories
+
+- Limit Relay Nine's artificial gravity to the station and nearby space. Let explorers who fall far enough descend to the planet below.
+- Recover vacuum grace gradually while breathing and keep recovery progress in the expedition save.
+- Give sand its own stack and categorize workbench recipes. Use the full window at large sizes with fixed-size controls and tiles.
+
 ## Next · Habitat power, storage, and ecology
 
 - Connect life support to power generation and storage. Extend the room system to larger and interconnected habitats.
 - Add storage containers and more recipes that use resources from different environments.
+- Add more mineable blocks, including clay, ice, and mineral deposits, with distinct hardness and crafting uses. Expand construction with bulkheads, ladders, and floor plating.
 - Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
 
 ## Later · Crafting grids and habitat fields

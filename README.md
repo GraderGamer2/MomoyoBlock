@@ -13,7 +13,7 @@ tar -xzf MomoyoBlock-linux-x86_64.tar.gz -C "$HOME"
 
 Re-extracting the archive updates the game. Expeditions live under `~/.MomoyoBlock/profile/saves/`. Existing expeditions keep their planets and block edits. Expeditions saved on Relay Nine before 0.4 resume at the landing pad. Choose **New expedition** from the main menu for a randomly generated starting planet in a separate save. **Continue expedition** opens the most recently saved slot, and **Load expedition** lets you pick another. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
 
-The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize.
+The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize. Larger windows show more terrain at the original tile and interface size.
 
 ## Controls
 
@@ -37,13 +37,13 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
-The starter pulse tool mines and collects within **2.1 tiles**. Keep the pointer on a block while holding left click to mine it. Harder blocks take longer, and solid tiles stop the pulse. The tool has unlimited durability. Its three upgrades increase hard-block mining power and extend range to **2.65**, **3.1**, and **3.6 tiles**. Placement has a two-tile reach.
+The starter pulse tool mines and collects within **2.1 tiles**. Keep the pointer on a block while holding left click to mine it. Harder blocks take longer, and solid tiles stop the pulse. The tool has unlimited durability. Its three upgrades increase hard-block mining power and extend range to **2.65**, **3.1**, and **3.6 tiles**. Placement has a two-tile reach. Mined sand has its own stack and can be placed from the hotbar.
 
-Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to smelt ore into alloy, repair the suit, craft upgrades and canisters, or make pressure glass, support frames, and insulation. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
+Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to browse **Materials**, **Construction**, **Survival**, and **Tools**. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
 
 The explorer carries **9 hotbar slots and 5 suit storage slots**. Open the inventory with **Tab** and drag a stack or choose a source and destination. Suit storage is accessible while wearing the suit. New stacks hold up to 64 items. Larger stacks carried over from older saves can be used down over time.
 
-Planets generate nearby terrain as you walk or dig. The HUD shows local gravity, weather, outdoor temperature, pressure, and the direction back to the beacon. Planetary gravity follows mass and radius. Larger planets of the same density have stronger gravity, and metal-rich planets are heavier than ice-rich planets of the same size. Relay Nine provides artificial gravity.
+Planets generate nearby terrain as you walk or dig. The HUD shows local gravity, weather, outdoor temperature, pressure, and the direction back to the beacon. Planetary gravity follows mass and radius. Larger planets of the same density have stronger gravity, and metal-rich planets are heavier than ice-rich planets of the same size. Relay Nine has a local artificial gravity field. Farther out, the planet's weaker pull takes over. Fall far enough below the station and you'll enter the atmosphere above that planet's landing pad.
 
 The **Body temp** gauge tracks your explorer's temperature in Celsius. Prolonged exposure can push it below 34 °C or above 40 °C and start draining health. Mild air, landing beacons, and Relay Nine's sealed cabin let body temperature gradually return to 37 °C. Cold exposure begins when you step into vacuum. The suit slows cooling, and insulation reduces temperature exposure under a roof.
 
@@ -51,7 +51,7 @@ The suit loses integrity in harsh weather and above 175 kPa. Pressure liners red
 
 Suit oxygen replenishes in breathable air and near a landing beacon. A hull breach drains the cabin over time and pulls the explorer and loose debris toward the opening. The airflow weakens as pressure drops. Patch the breach with alloy or pressure glass and give life support time to refill the cabin. Rescue sends you back to the beacon, restores at least 35% suit integrity, and costs some construction supplies.
 
-In orbit, running out of breathable air starts an **8-second** countdown. Health then falls by **2 points per second** until a working suit with air or a breathable shelter restores your oxygen supply. The countdown resumes from its saved value when an expedition is reopened.
+In orbit, a full vacuum reserve gives you **8 seconds** without breathable air before health starts to fall by **2 points per second**. Breathable air or a working suit with oxygen pauses the countdown. Every **5 seconds** of breathing restores **1 second** of grace, up to eight. If you run out of air again before recovering fully, the countdown resumes where it left off. Saves keep the remaining grace and partial recovery.
 
 ## Build an oxygen shelter
 

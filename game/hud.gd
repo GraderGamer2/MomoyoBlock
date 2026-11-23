@@ -14,6 +14,7 @@ var _status: Label
 var _travel: Label
 var _environment: Label
 var _atmosphere: Label
+var _vacuum_reserve: Label
 var _workshop: Label
 var _mining: Label
 var _weather: Label
@@ -79,6 +80,10 @@ func _ready() -> void:
 	_atmosphere = _label("", 12, MUTED)
 	_atmosphere.name = "LocalAtmosphere"
 	readings.add_child(_atmosphere)
+	_vacuum_reserve = _label("", 12, GREEN)
+	_vacuum_reserve.name = "VacuumReserve"
+	_vacuum_reserve.hide()
+	readings.add_child(_vacuum_reserve)
 	var names := ["Health", "Hunger", "Thirst", "Suit O₂", "Suit", "Jetpack"]
 	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf"), Color("#a5a9ed"), Color("#75c4d9")]
 	for i in names.size():
@@ -184,9 +189,14 @@ func show_region(region: int, planet: PlanetProfile) -> void:
 	var on_surface := region == BlockWorld.Region.SURFACE
 	if on_surface:
 		_region.text = "%s  ·  %.2f g" % [String(planet.details.biome).to_upper(), planet.gravity_g]
-	else:
-		_region.text = "ARTIFICIAL GRAVITY  ·  %.2f g" % (BlockWorld.STATION_GRAVITY_PX / PlanetProfile.EARTH_GRAVITY_PX)
 	_location.text = planet.title() if on_surface else "Relay Nine"
+
+
+func show_orbital_gravity(gravity: float, relay_field_active: bool) -> void:
+	var source := "RELAY GRAVITY" if relay_field_active else "PLANETARY PULL"
+	var reading := "%s  ·  %.2f g" % [source, gravity / PlanetProfile.EARTH_GRAVITY_PX]
+	if _region.text != reading:
+		_region.text = reading
 
 
 func show_inventory(inventory: ExpeditionInventory, selected: int, pulse_level: int) -> void:
@@ -239,9 +249,11 @@ func show_status(message: String, saved: bool = true) -> void:
 	_status_timeout.start()
 
 
-func set_transit_route(target: int, planet_name: String) -> void:
+func set_transit_route(target: int, planet_name: String, falling: bool) -> void:
 	var outbound := target == BlockWorld.Region.STATION
 	_transit_title.text = "Ascending to orbit" if outbound else "Returning to the surface"
+	if falling:
+		_transit_title.text = "Falling to the surface"
 	_transit_route.text = "%s  →  RELAY NINE" % planet_name.to_upper() if outbound else "RELAY NINE  →  %s" % planet_name.to_upper()
 
 
@@ -315,6 +327,16 @@ func show_survival(state: SurvivalState, inventory: ExpeditionInventory, air: St
 	if _atmosphere.text != atmosphere:
 		_atmosphere.text = atmosphere
 	_atmosphere.modulate = AMBER if pressure_warning else Color.WHITE
+
+
+func show_vacuum_recovery(state: SurvivalState, breathing: bool) -> void:
+	_vacuum_reserve.visible = breathing and state.vacuum_exposure > 0.0
+	if _vacuum_reserve.visible:
+		var reserve := SurvivalState.VACUUM_GRACE - state.vacuum_exposure
+		var wait := ceili(SurvivalState.VACUUM_RECOVERY_INTERVAL - state.vacuum_recovery)
+		var reading := "Vacuum reserve %.1f/%.0f s  ·  +1 in %d s" % [reserve, SurvivalState.VACUUM_GRACE, wait]
+		if _vacuum_reserve.text != reading:
+			_vacuum_reserve.text = reading
 
 
 func _show_body_temperature(value: float, target: float) -> void:

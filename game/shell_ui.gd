@@ -104,6 +104,20 @@ func button(caption: String, action: Callable, primary := false) -> Button:
 	return control
 
 
+func tabs() -> TabContainer:
+	var control := TabContainer.new()
+	control.use_hidden_tabs_for_min_size = true
+	control.add_theme_font_size_override("font_size", 15)
+	control.add_theme_color_override("font_selected_color", MINT)
+	control.add_theme_color_override("font_unselected_color", MUTED)
+	control.add_theme_stylebox_override("panel", _style(Color("#142637"), Color("#344f60"), 12))
+	control.add_theme_stylebox_override("tab_selected", _style(Color("#1d3746"), Color("#69a297"), 8))
+	control.add_theme_stylebox_override("tab_unselected", _style(Color("#172739"), Color("#344f60"), 8))
+	control.add_theme_stylebox_override("tab_hovered", _style(Color("#243f50"), Color("#69a297"), 8))
+	control.get_tab_bar().mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	return control
+
+
 static func label(caption: String, font_size: int, tint := PAPER) -> Label:
 	var control := Label.new()
 	control.text = caption
@@ -115,6 +129,7 @@ static func label(caption: String, font_size: int, tint := PAPER) -> Label:
 
 func _build_titlebar() -> void:
 	var frame := PanelContainer.new()
+	frame.name = "TitleBar"
 	_layer.add_child(frame)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	frame.offset_bottom = 38

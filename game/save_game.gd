@@ -10,7 +10,7 @@ const TEMPERATURE_FORMAT := 5
 const FIELD_EQUIPMENT_FORMAT := 6
 const SLOTTED_FORMAT := 7
 const HABITAT_FORMAT := 8
-const FORMAT := HABITAT_FORMAT
+const FORMAT := 9
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -99,6 +99,10 @@ func read() -> Dictionary:
 		if vitals is Dictionary:
 			vitals["vacuum_exposure"] = 0.0
 		state.habitats = {}
+	if loaded_format < FORMAT:
+		var vitals: Variant = state.get("vitals")
+		if vitals is Dictionary:
+			vitals["vacuum_recovery"] = 0.0
 		state.format = FORMAT
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 · 2026-11-23
+
+- Relay Nine's artificial gravity fades beyond the hull. Falling far enough under the planet's pull drops the explorer above the current planet's landing pad.
+- Restore one second of vacuum grace per five seconds of breathing, up to eight seconds. Air interruptions pause recovery, and saves keep both the remaining grace and partial recovery.
+- Mining sand now yields a separate stack of sand that can be placed again.
+- Group workbench recipes under Materials, Construction, Survival, and Tools. Crafting keeps the selected tab open.
+- Render at the resized window's resolution and keep the title bar, HUD, and tiles at their original scale on larger windows. Stream extra terrain to fill the expanded view.
+
 ## 0.7.0 · 2026-11-23
 
 - Added an eight-second grace period when an explorer in orbit runs out of breathable air. The HUD counts down before vacuum damage begins at two health points per second.

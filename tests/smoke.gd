@@ -6,6 +6,7 @@ const B := BlockWorld.Block
 const I := preload("res://game/expedition_inventory.gd")
 const TEST_RECYCLER := Vector2i(8, BlockWorld.PAD_ROW)
 const TEST_ROOF := Vector2i(8, BlockWorld.PAD_ROW - 4)
+const TEST_SAND_PLACEMENT := Vector2i(3, BlockWorld.PAD_ROW - 1)
 
 var _failures := 0
 
@@ -84,6 +85,7 @@ func _run() -> void:
 			"Continued holding cannot mine the empty cell twice")
 	_expect(game.place(above_surface) and game.inventory.count(B.SOIL) == soil, "Placement consumes one block")
 	_expect(not game.place(Vector2i(40, 7)), "Placement respects reach")
+	_check_sand(game)
 
 	game.terrain.stream_around(Vector2(2700.0, 350.0))
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.EMPTY, "Distant chunks unload")
@@ -128,6 +130,7 @@ func _run() -> void:
 	_expect(is_equal_approx(game.survival.body_temperature, 38.7) and temperature.text == "38.7 °C · Recovering",
 			"The saved body temperature and recovery reading return at the beacon")
 	_expect(game.terrain.block_at(surface_block) == BlockWorld.Block.EMPTY, "Reopening restores the mined block")
+	_expect(game.terrain.block_at(TEST_SAND_PLACEMENT) == B.SAND, "Placed sand persists through travel and reload")
 	_expect(game.station.edits.get(station_block) == BlockWorld.Block.ALLOY,
 			"Reopening restores the inactive station edits")
 	_expect(game.surface.harvested.has(-6), "Harvest persists after reopening")
@@ -154,7 +157,9 @@ func _run() -> void:
 	_expect(game.survival.health < health and game.survival.health > health - 5.0 and air_warning.text.contains("Losing health"),
 			"Prolonged exposure on the EVA deck drains health slowly after the countdown")
 	_expect(game.toggle_suit(), "The suit can be put on again on the EVA deck")
-	_expect(game.survival.vacuum_exposure == 0.0, "Restored oxygen clears the vacuum countdown")
+	var vacuum_reserve := game.find_child("VacuumReserve", true, false) as Label
+	_expect(game.survival.vacuum_exposure == SurvivalState.VACUUM_GRACE and vacuum_reserve.visible
+			and vacuum_reserve.text.contains("+1 in 5 s"), "Suit oxygen pauses harm and shows the reserve recharge")
 	game.explorer.position = BlockWorld.pad_position()
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.land_at(Vector2i.RIGHT), "The star chart accepts a different sector at the beacon")
@@ -191,6 +196,11 @@ func _run() -> void:
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.begin_travel(), "The second planet connects back to Relay Nine")
 	await _frames(90)
+	await _check_orbital_descent(game)
+	_expect(game.terrain.block_at(foreign_block) == B.ALLOY and game._habitats.has(TEST_RECYCLER),
+			"Falling to a planet restores its buildings and habitat records")
+	_expect(game.begin_travel(), "The explorer can launch again after falling to the surface")
+	await _frames(90)
 	_expect(game.land_at(Vector2i.ZERO), "You can chart a return trip to the first planet")
 	await _frames(90)
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.SOIL and game.surface.harvested.has(-6),
@@ -214,6 +224,7 @@ func _run() -> void:
 
 
 func _check_menu() -> void:
+	get_window().size = get_window().content_scale_size
 	var app: MomoyoApp = APP.instantiate()
 	add_child(app)
 	await _frames(4)
@@ -245,11 +256,26 @@ func _check_menu() -> void:
 	var first_title := app.game.surface.planet.title()
 	_expect(first_seed != 0 and first_title != "Cinder Reach", "A new expedition starts on a seeded planet with a generated name")
 	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The starting seed is saved immediately")
+	await _check_window_layout(app)
 	app.show_workshop()
 	_expect(app.screen == MomoyoApp.Screen.WORKSHOP and get_tree().paused,
 			"Field crafting can open at the landing beacon")
 	_expect(app.game.workbench_name().is_empty() and not app.game.craft(ExpeditionKit.Recipe.CANISTER),
 			"The landing beacon provides no workbench")
+	_expect(app.find_child("RecipeCategories", true, false) == null, "Field crafting shows its only recipe directly")
+	var bench := Vector2i(2, BlockWorld.PAD_ROW - 1)
+	app.game.terrain.set_block(bench, B.WORKBENCH)
+	app.show_workshop()
+	var tabs := app.find_child("RecipeCategories", true, false) as TabContainer
+	_expect(tabs != null and tabs.get_tab_count() == ExpeditionKit.CATEGORY_NAMES.size(), "The workbench has four recipe categories")
+	if tabs != null:
+		tabs.current_tab = ExpeditionKit.Category.TOOLS
+		_expect(tabs.get_current_tab_control().name == "Tools", "Choosing Tools opens the pulse upgrades")
+		app._craft(ExpeditionKit.Recipe.PULSE_1)
+		var rebuilt := app.find_child("RecipeCategories", true, false) as TabContainer
+		_expect(app.game.kit.pulse_level == 1 and rebuilt != null and rebuilt.current_tab == ExpeditionKit.Category.TOOLS,
+				"Crafting an upgrade keeps its category open")
+	app.game.terrain.set_block(bench, B.EMPTY)
 	app.show_inventory()
 	_expect(app.screen == MomoyoApp.Screen.INVENTORY and app._inventory_slots.size() == 14,
 			"The inventory menu shows nine hotbar slots and five suit slots")
@@ -279,6 +305,56 @@ func _check_menu() -> void:
 	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The original expedition is preserved")
 	app.queue_free()
 	await get_tree().process_frame
+
+
+func _check_window_layout(app: MomoyoApp) -> void:
+	var window := get_window()
+	var initial_size := window.size
+	var titlebar := app.find_child("TitleBar", true, false) as PanelContainer
+	var titlebar_height := titlebar.size.y
+	var distant_column := -38
+	var edge := Vector2i(distant_column, app.game.surface.surface_row(distant_column))
+	_expect(app.game.terrain.block_at(edge) == B.EMPTY, "The normal view keeps its original chunk budget")
+	window.size = Vector2i(1920, 1200)
+	await _frames(5)
+	_expect(window.get_visible_rect().size == Vector2(window.size) and window.get_stretch_transform().get_scale() == Vector2.ONE,
+			"A large window has a full-size one-to-one canvas without upscaling")
+	_expect(titlebar.size.y == titlebar_height and titlebar.size.x == window.size.x,
+			"The title bar spans the resized window at its original height")
+	_expect(app.game.terrain.block_at(edge) == B.GRASS, "Terrain streams into the larger view before the explorer moves")
+	window.size = Vector2i(640, 360)
+	await _frames(4)
+	_expect(window.get_visible_rect().size.is_equal_approx(Vector2(window.content_scale_size)) and window.content_scale_factor < 1.0,
+			"Small window layout mismatch (%s, canvas %s, scale %.3f)" % [
+				window.size, window.get_visible_rect().size, window.content_scale_factor,
+			])
+	window.size = initial_size
+	await _frames(4)
+	_expect(is_equal_approx(window.content_scale_factor, 1.0) and app.game.terrain.block_at(edge) == B.EMPTY,
+			"Restored window did not return to native scale and chunk budget (%s, scale %.3f, tile %d)" % [
+				initial_size, window.content_scale_factor, app.game.terrain.block_at(edge),
+			])
+
+
+func _check_sand(game: MomoyoGame) -> void:
+	var deposit := TEST_SAND_PLACEMENT + Vector2i.DOWN
+	game.terrain.set_block(deposit, B.SAND)
+	var previous := game.explorer.position
+	var previous_slot := game.selected
+	game.explorer.position.x = game.terrain.scene_point(deposit + Vector2i.RIGHT, ActiveTerrain.CELL_CENTER).x
+	var soil := game.inventory.count(B.SOIL)
+	_expect(game.begin_mining(deposit) and game.advance_mining(0.5, deposit, true),
+			"The starter pulse can break a nearby sand block")
+	_expect(game.inventory.count(B.SAND) == 1 and game.inventory.count(B.SOIL) == soil
+			and I.valid_snapshot(game.inventory.snapshot()), "Sand has its own valid inventory stack")
+	for slot in I.HOTBAR_SLOTS:
+		if game.inventory.item_at(slot) == B.SAND:
+			game.selected = slot
+			break
+	_expect(game.place(TEST_SAND_PLACEMENT) and game.inventory.count(B.SAND) == 0
+			and game.terrain.block_at(TEST_SAND_PLACEMENT) == B.SAND, "Placing mined sand consumes the sand stack")
+	game.selected = previous_slot
+	game.explorer.position = previous
 
 
 func _check_inventory() -> void:
@@ -315,6 +391,11 @@ func _check_jetpack() -> void:
 func _check_gravity() -> void:
 	_expect(is_equal_approx(PlanetProfile.surface_gravity(8.0, 2.0), 2.0),
 			"Doubling radius at Earth density gives eight times the mass and twice the surface gravity")
+	var relay_edge := Vector2(BlockWorld.STATION_PRESSURE_AREA.end.x, BlockWorld.PAD_ROW)
+	var fading := BlockWorld.station_gravity_strength(relay_edge + Vector2(2, 0))
+	_expect(BlockWorld.station_gravity_strength(relay_edge) == 1.0 and fading > 0.0 and fading < 1.0
+			and BlockWorld.station_gravity_strength(relay_edge + Vector2(4, 0)) == 0.0,
+			"Artificial gravity fades to zero at the edge of the Relay's field")
 	var low := INF
 	var high := 0.0
 	for i in 36:
@@ -368,8 +449,23 @@ func _check_vacuum_grace() -> void:
 	continued.restore(bare.snapshot())
 	continued.advance(1.0, false, 0.0, 0.0)
 	_expect(continued.health == 96.0, "Reloading preserves exposure time")
-	continued.advance(0.25, true, 0.0)
-	_expect(continued.vacuum_exposure == 0.0, "Breathable shelter resets exposure")
+	continued.advance(4.0, true, 0.0)
+	_expect(continued.vacuum_exposure == 8.0 and continued.vacuum_recovery == 4.0,
+			"Finding air pauses health loss and waits five seconds before restoring grace")
+	continued.advance(0.5, false, 0.0, 0.0)
+	_expect(continued.health == 97.0 and continued.vacuum_recovery == 4.0,
+			"Leaving shelter early resumes vacuum damage and keeps partial recovery")
+	continued.restore(continued.snapshot())
+	continued.advance(1.0, true, 0.0)
+	_expect(continued.vacuum_exposure == 7.0 and continued.vacuum_recovery == 0.0,
+			"One second of grace returns after five total seconds of breathing")
+	var recovered_health := continued.health
+	continued.advance(1.5, false, 0.0, 0.0)
+	_expect(continued.vacuum_exposure == 8.0 and continued.health == recovered_health - 1.0,
+			"Leaving shelter uses only the recovered grace before vacuum damage resumes")
+	continued.advance(41.0, true, 0.0)
+	_expect(continued.vacuum_exposure == 0.0 and continued.vacuum_recovery == 0.0,
+			"Vacuum grace caps at eight seconds and stops recovering")
 
 	var empty_tank := SurvivalState.new()
 	empty_tank.oxygen = SurvivalState.VACUUM_DRAIN
@@ -378,6 +474,11 @@ func _check_vacuum_grace() -> void:
 			"Oxygen from the suit delays the start of the grace period")
 	empty_tank.advance(1.0, false, 0.0, 0.0)
 	_expect(empty_tank.health == 99.0, "An empty tank gets the same gradual loss as an unequipped suit")
+	empty_tank.advance(4.5, true, 0.0)
+	empty_tank.oxygen = SurvivalState.VACUUM_DRAIN * 0.75
+	empty_tank.advance(1.0, false, 0.0, 0.0)
+	_expect(is_equal_approx(empty_tank.vacuum_exposure, 7.25) and is_equal_approx(empty_tank.vacuum_recovery, 0.25),
+			"Only the oxygenated part of a suit's last breath recharges vacuum grace")
 
 
 func _check_habitat(game: MomoyoGame) -> float:
@@ -599,6 +700,36 @@ func _check_station(game: MomoyoGame) -> void:
 	_expect(game.craft(ExpeditionKit.Recipe.SMELT), "The workshop refines more alloy for later construction")
 
 
+func _check_orbital_descent(game: MomoyoGame) -> void:
+	var address := game.sector
+	var deck_edge := Vector2i(23, BlockWorld.PAD_ROW)
+	game.explorer.position = game.terrain.scene_point(deck_edge, Vector2(0.5, -15.0 / BlockWorld.TILE_SIZE))
+	game.explorer.velocity = Vector2.ZERO
+	await _frames(5)
+	_expect(game.explorer.is_on_floor() and game.explorer.gravity == BlockWorld.STATION_GRAVITY_PX,
+			"The EVA deck remains inside the Relay's artificial gravity")
+	var health := game.survival.health
+	var integrity := game.survival.suit_integrity
+	Input.action_press("move_right")
+	await _frames(65)
+	Input.action_release("move_right")
+	_expect(not game.explorer.is_on_floor() and game.explorer.velocity.y > 0.0
+			and is_equal_approx(game.explorer.gravity, game._orbital_pull()), "Walking off the EVA deck leaves only the planet's pull")
+	for _frame in 420:
+		if game.region == BlockWorld.Region.SURFACE:
+			break
+		await get_tree().process_frame
+	_expect(game.region == BlockWorld.Region.SURFACE and game.sector == address
+			and game.explorer.position.y < BlockWorld.pad_position().y - 5 * BlockWorld.TILE_SIZE and game.explorer.velocity.y > 0.0,
+			"An orbital fall brings the explorer into the same planet's sky with downward momentum")
+	await _frames(92)
+	_expect(game.explorer.is_on_floor() and game._at_beacon() and game.survival.health >= health
+			and is_equal_approx(game.survival.suit_integrity, integrity), "The explorer lands near the beacon without a station rescue penalty")
+	var saved := ExpeditionSave.new().read()
+	_expect(saved.get("region") == BlockWorld.Region.SURFACE and saved.get("sector") == address,
+			"The orbital descent saves the surface arrival")
+
+
 func _check_weather(game: MomoyoGame) -> void:
 	var weather := game.find_child("CurrentWeather", true, false) as Label
 	var precipitation := game.get_node("Backdrop/Front") as WeatherLayer
@@ -729,10 +860,24 @@ func _check_previous_format() -> void:
 				slotted.format = ExpeditionSave.SLOTTED_FORMAT
 				slotted.erase("habitats")
 				slotted.vitals.erase("vacuum_exposure")
+				slotted.vitals.erase("vacuum_recovery")
 				_expect(previous.write(slotted) == OK, "A 0.6 fixture can be written")
 				var restored := ExpeditionSave.new().read()
 				_expect(restored.get("habitats") == {} and restored.get("vitals", {}).get("vacuum_exposure") == 0.0 and
 						restored.get("inventory") == slotted.inventory, "0.6 saves retain their slots and gain the vacuum defaults")
+				if not restored.is_empty():
+					restored.format = ExpeditionSave.HABITAT_FORMAT
+					restored.vitals["vacuum_exposure"] = 6.25
+					restored.vitals.erase("vacuum_recovery")
+					_expect(previous.write(restored) == OK, "A 0.7 fixture can be written")
+					var migrated_habitat := ExpeditionSave.new().read()
+					var vitals: Dictionary = migrated_habitat.get("vitals", {})
+					_expect(vitals.get("vacuum_exposure") == 6.25 and vitals.get("vacuum_recovery") == 0.0,
+							"0.7 saves retain their remaining vacuum grace and gain the recharge timer")
+					if not vitals.is_empty():
+						vitals.vacuum_recovery = 2.5
+						_expect(previous.write(migrated_habitat) == OK and ExpeditionSave.new().read().get("vitals", {}) == vitals,
+								"Expedition saves preserve partial vacuum recovery")
 
 
 func _check_journal() -> void:

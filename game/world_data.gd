@@ -20,8 +20,10 @@ const STATION_HATCH := Vector2i(STATION_CABIN.end.x, PAD_ROW - 3)
 const STATION_WORKBENCH := Vector2i(-9, PAD_ROW - 1)
 const STATION_HULL := Rect2i(-19, PAD_ROW - 7, 44, 11)
 const STATION_PRESSURE_AREA := Rect2i(-21, PAD_ROW - 9, 48, 15)
-const STATION_RESCUE_ROW := 56
+const STATION_DESCENT_ROW := 56
 const STATION_GRAVITY_PX := 510.0
+const STATION_GRAVITY_FALLOFF_TILES := 4.0
+const ORBITAL_GRAVITY_FRACTION := 0.12
 const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block.ORE]
 const BLOCK_NAMES := [
 	"Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone",
@@ -78,6 +80,12 @@ static func cell_at(point: Vector2) -> Vector2i:
 
 static func pad_position() -> Vector2:
 	return Vector2(TILE_SIZE * 0.5, PAD_ROW * TILE_SIZE - 15.0)
+
+
+static func station_gravity_strength(tile_position: Vector2) -> float:
+	var field := Rect2(STATION_PRESSURE_AREA)
+	var edge := tile_position.clamp(field.position, field.end)
+	return 1.0 - smoothstep(0.0, STATION_GRAVITY_FALLOFF_TILES ** 2, tile_position.distance_squared_to(edge))
 
 
 func make_chunk(chunk: Vector2i) -> PackedByteArray:
@@ -150,7 +158,8 @@ static func is_valid_edit(material: int) -> bool:
 
 
 static func is_placeable(material: int) -> bool:
-	return material in BUILD_MATERIALS or (material >= Block.WORKBENCH and material < TILE_COLORS.size())
+	return material == Block.SAND or material in BUILD_MATERIALS \
+			or (material >= Block.WORKBENCH and material < TILE_COLORS.size())
 
 
 static func is_airtight(material: int) -> bool:
@@ -169,7 +178,7 @@ func material_at(cell: Vector2i) -> int:
 
 static func mined_material(material: int) -> int:
 	match material:
-		Block.GRASS, Block.SAND:
+		Block.GRASS:
 			return Block.SOIL
 		Block.SHALE, Block.BASALT, Block.FROSTSTONE:
 			return Block.STONE

@@ -6,6 +6,7 @@ const TICK := 0.25
 const VACUUM_DRAIN := 1.10
 const VACUUM_GRACE := 8.0
 const VACUUM_DAMAGE := 2.0
+const VACUUM_RECOVERY_INTERVAL := 5.0
 const STORM_SURCHARGE := 0.20
 const HYPOXIA_DAMAGE := 4.0
 const SUIT_PRESSURE_LIMIT := 175
@@ -35,6 +36,7 @@ var suit_integrity := MAX_LEVEL
 var suit_equipped := true
 var body_temperature := NORMAL_BODY_TEMPERATURE
 var vacuum_exposure := 0.0
+var vacuum_recovery := 0.0
 var jetpack_fuel := JETPACK_CAPACITY
 var jetpack_cooldown := 0.0
 var elapsed := 0.0
@@ -54,12 +56,13 @@ func advance(seconds: float, breathable: bool, storm_wear: float, pressure: floa
 	var liner_factor := 0.2 if reinforced else 1.0
 	damage_suit(seconds * (storm_wear + pressure_strain * 0.016 * liner_factor))
 	var protected := suit_active()
-	var without_oxygen := seconds
+	var breathing_time := seconds if breathable else 0.0
 	if protected:
 		var leak := maxf(0.0, SUIT_LEAK_START - suit_integrity) / SUIT_LEAK_START
 		var drain := VACUUM_DRAIN + leak * 1.4 + (STORM_SURCHARGE if harsh_weather else 0.0)
 		var oxygen_rate := 16.0 if breathable else -drain
-		without_oxygen = maxf(0.0, seconds - oxygen / drain)
+		if not breathable:
+			breathing_time = minf(seconds, oxygen / drain)
 		oxygen = clampf(oxygen + oxygen_rate * seconds, 0.0, MAX_LEVEL)
 
 	var thermal_target := body_temperature_target(temperature)
@@ -70,14 +73,15 @@ func advance(seconds: float, breathable: bool, storm_wear: float, pressure: floa
 		response_time = RECOVERY_TIME
 	body_temperature = lerpf(body_temperature, thermal_target, 1.0 - exp(-seconds / response_time))
 
-	var airless_vacuum := (orbital or pressure == 0.0) and not breathable and (not protected or oxygen <= 0.0)
+	if vacuum_exposure > 0.0 and breathing_time > 0.0:
+		_recover_vacuum_grace(breathing_time)
+	var airless_vacuum := (orbital or pressure == 0.0) and not has_breathing_air(breathable)
 	var loss := 0.0
 	if airless_vacuum:
-		var exposure := vacuum_exposure + without_oxygen
+		var exposure := vacuum_exposure + (seconds - breathing_time)
 		loss = VACUUM_DAMAGE * maxf(0.0, exposure - VACUUM_GRACE)
 		vacuum_exposure = minf(exposure, VACUUM_GRACE)
 	else:
-		vacuum_exposure = 0.0
 		loss = seconds * _environment_damage(breathable, protected, storm_wear, pressure, pressure_strain, liner_factor)
 	if hunger <= 0.0:
 		loss += 1.4 * seconds
@@ -87,6 +91,13 @@ func advance(seconds: float, breathable: bool, storm_wear: float, pressure: floa
 		health = maxf(0.0, health - loss)
 	elif minf(hunger, thirst) > 72.0 and (breathable or (protected and oxygen > 70.0)):
 		health = minf(MAX_LEVEL, health + 0.5 * seconds)
+
+
+func _recover_vacuum_grace(seconds: float) -> void:
+	vacuum_recovery += seconds
+	if vacuum_recovery >= VACUUM_RECOVERY_INTERVAL:
+		vacuum_exposure = maxf(0.0, vacuum_exposure - floorf(vacuum_recovery / VACUUM_RECOVERY_INTERVAL))
+		vacuum_recovery = fposmod(vacuum_recovery, VACUUM_RECOVERY_INTERVAL) if vacuum_exposure > 0.0 else 0.0
 
 
 func _environment_damage(breathable: bool, protected: bool, storm_wear: float, pressure: float,
@@ -107,6 +118,10 @@ func _environment_damage(breathable: bool, protected: bool, storm_wear: float, p
 
 func suit_active() -> bool:
 	return suit_equipped and suit_integrity > 0.0
+
+
+func has_breathing_air(breathable: bool) -> bool:
+	return breathable or (suit_active() and oxygen > 0.0)
 
 
 func damage_suit(amount: float) -> void:
@@ -162,6 +177,7 @@ func restore_after_rescue() -> void:
 	suit_integrity = maxf(suit_integrity, RESCUE_SUIT_INTEGRITY)
 	body_temperature = NORMAL_BODY_TEMPERATURE
 	vacuum_exposure = 0.0
+	vacuum_recovery = 0.0
 	jetpack_fuel = JETPACK_CAPACITY
 	jetpack_cooldown = 0.0
 	_jetpack_running = false
@@ -171,7 +187,8 @@ func snapshot() -> Dictionary:
 	return {
 		"health": health, "hunger": hunger, "thirst": thirst, "oxygen": oxygen,
 		"suit_integrity": suit_integrity, "suit_equipped": suit_equipped,
-		"body_temperature": body_temperature, "vacuum_exposure": vacuum_exposure, "elapsed": elapsed,
+		"body_temperature": body_temperature, "elapsed": elapsed,
+		"vacuum_exposure": vacuum_exposure, "vacuum_recovery": vacuum_recovery,
 		"jetpack_fuel": jetpack_fuel, "jetpack_cooldown": jetpack_cooldown,
 	}
 
@@ -185,6 +202,7 @@ func restore(data: Dictionary) -> void:
 	suit_equipped = data.suit_equipped
 	body_temperature = data.body_temperature
 	vacuum_exposure = data.vacuum_exposure
+	vacuum_recovery = data.vacuum_recovery
 	jetpack_fuel = data.jetpack_fuel
 	jetpack_cooldown = data.jetpack_cooldown
 	_jetpack_running = false
@@ -212,4 +230,6 @@ static func valid_snapshot(data: Variant) -> bool:
 		var value: Variant = data.get(key)
 		if not (value is float or value is int) or not is_finite(float(value)) or value < 0.0 or value > equipment_limits[key]:
 			return false
-	return true
+	var recovery: Variant = data.get("vacuum_recovery")
+	return (recovery is float or recovery is int) and is_finite(float(recovery)) \
+			and recovery >= 0.0 and recovery < VACUUM_RECOVERY_INTERVAL and (recovery == 0.0 or data.vacuum_exposure > 0.0)
