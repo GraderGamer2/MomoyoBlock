@@ -38,9 +38,12 @@ func _ready() -> void:
 func _fit_window_content() -> void:
 	var window := get_window()
 	var fit := Vector2(window.size) / Vector2(window.content_scale_size)
-	var scale := minf(1.0, minf(fit.x, fit.y))
-	if scale > 0.0 and not is_equal_approx(window.content_scale_factor, scale):
+	var scale := minf(fit.x, fit.y)
+	if scale <= 0.0:
+		return
+	if not is_equal_approx(window.content_scale_factor, scale):
 		window.content_scale_factor = scale
+	_ui.fit_window_controls()
 
 
 func _input(event: InputEvent) -> void:

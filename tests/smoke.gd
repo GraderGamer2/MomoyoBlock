@@ -311,17 +311,38 @@ func _check_window_layout(app: MomoyoApp) -> void:
 	var window := get_window()
 	var initial_size := window.size
 	var titlebar := app.find_child("TitleBar", true, false) as PanelContainer
-	var titlebar_height := titlebar.size.y
+	var close := titlebar.get_child(0).get_child(-1) as Button
+	var grip := app.find_child("ResizeGrip", true, false) as Control
+	var air_readout := app.game.find_child("LocalAir", true, false) as Label
+	var initial_title := _window_pixel_rect(titlebar)
+	var initial_close := _window_pixel_rect(close)
+	var initial_grip := _window_pixel_rect(grip)
 	var distant_column := -38
 	var edge := Vector2i(distant_column, app.game.surface.surface_row(distant_column))
 	_expect(app.game.terrain.block_at(edge) == B.EMPTY, "The normal view keeps its original chunk budget")
-	window.size = Vector2i(1920, 1200)
+	window.size = Vector2i(1920, 1080)
 	await _frames(5)
-	_expect(window.get_visible_rect().size == Vector2(window.size) and window.get_stretch_transform().get_scale() == Vector2.ONE,
-			"A large window has a full-size one-to-one canvas without upscaling")
-	_expect(titlebar.size.y == titlebar_height and titlebar.size.x == window.size.x,
-			"The title bar spans the resized window at its original height")
-	_expect(app.game.terrain.block_at(edge) == B.GRASS, "Terrain streams into the larger view before the explorer moves")
+	var game_scale := Vector2.ONE * (1920.0 / initial_size.x)
+	_expect(air_readout.get_viewport_transform().get_scale().is_equal_approx(game_scale)
+			and app.game.explorer.get_viewport_transform().get_scale().is_equal_approx(game_scale),
+			"The game world and HUD scale up together on a 1080p display")
+	_expect(window.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED
+			and window.get_visible_rect().size.is_equal_approx(Vector2(initial_size)),
+			"The scaled game fills a native-resolution window")
+	var window_growth := Vector2(window.size - initial_size)
+	var title_rect := _window_pixel_rect(titlebar)
+	var close_rect := _window_pixel_rect(close)
+	var grip_rect := _window_pixel_rect(grip)
+	_expect(title_rect.is_equal_approx(initial_title.grow_side(SIDE_RIGHT, window_growth.x)),
+			"The title bar retains its physical height (%s to %s)" % [initial_title, title_rect])
+	_expect(close_rect.is_equal_approx(Rect2(initial_close.position + Vector2(window_growth.x, 0), initial_close.size)),
+			"Window buttons retain their size and right alignment (%s to %s)" % [initial_close, close_rect])
+	_expect(grip_rect.is_equal_approx(Rect2(initial_grip.position + window_growth, initial_grip.size)),
+			"The resize grip follows the physical corner (%s to %s)" % [initial_grip, grip_rect])
+	window.size = Vector2i(2560, 1080)
+	await _frames(5)
+	_expect(window.get_stretch_transform().get_scale().is_equal_approx(game_scale)
+			and app.game.terrain.block_at(edge) == B.GRASS, "Ultrawide windows show extra terrain instead of stretching tiles")
 	window.size = Vector2i(640, 360)
 	await _frames(4)
 	_expect(window.get_visible_rect().size.is_equal_approx(Vector2(window.content_scale_size)) and window.content_scale_factor < 1.0,
@@ -330,10 +351,15 @@ func _check_window_layout(app: MomoyoApp) -> void:
 			])
 	window.size = initial_size
 	await _frames(4)
-	_expect(is_equal_approx(window.content_scale_factor, 1.0) and app.game.terrain.block_at(edge) == B.EMPTY,
+	_expect(is_equal_approx(window.content_scale_factor, 1.0) and _window_pixel_rect(grip).is_equal_approx(initial_grip)
+			and app.game.terrain.block_at(edge) == B.EMPTY,
 			"Restored window did not return to native scale and chunk budget (%s, scale %.3f, tile %d)" % [
 				initial_size, window.content_scale_factor, app.game.terrain.block_at(edge),
 			])
+
+
+func _window_pixel_rect(control: Control) -> Rect2:
+	return control.get_viewport_transform() * control.get_global_transform() * Rect2(Vector2.ZERO, control.size)
 
 
 func _check_sand(game: MomoyoGame) -> void:

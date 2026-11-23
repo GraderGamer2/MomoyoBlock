@@ -45,7 +45,7 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 
 - Limit Relay Nine's artificial gravity to the station and nearby space. Let explorers who fall far enough descend to the planet below.
 - Recover vacuum grace gradually while breathing and keep recovery progress in the expedition save.
-- Give sand its own stack and categorize workbench recipes. Use the full window at large sizes with fixed-size controls and tiles.
+- Give sand its own stack and categorize workbench recipes. Scale the game and menus with the window and keep the window controls at a consistent size when maximizing.
 
 ## Next · Habitat power, storage, and ecology
 

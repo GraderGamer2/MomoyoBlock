@@ -7,10 +7,13 @@ const PAPER := Color("#e4eeee")
 const MUTED := Color("#a5bdc8")
 const MINT := Color("#a8e5cb")
 const AMBER := Color("#f1c182")
+const TITLE_BAR_HEIGHT := 38.0
 
 var _layer: Control
+var _window_controls: Control
 var _title_art: Horizon
 var _overlay: ColorRect
+var _menu_center: CenterContainer
 var _panel: PanelContainer
 var _body: VBoxContainer
 var _feedback: Label
@@ -31,18 +34,30 @@ func _ready() -> void:
 	_overlay.color = Color(0.025, 0.055, 0.095, 0.68)
 	_layer.add_child(_overlay)
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var center := CenterContainer.new()
-	_overlay.add_child(center)
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.offset_top = 38
-	center.offset_bottom = -10
+	_menu_center = CenterContainer.new()
+	_overlay.add_child(_menu_center)
+	_menu_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_menu_center.offset_bottom = -10
 	_panel = PanelContainer.new()
 	_panel.custom_minimum_size.x = 408.0
 	_panel.add_theme_stylebox_override("panel", _style(Color("#102031"), Color("#40616f"), 23))
-	center.add_child(_panel)
+	_menu_center.add_child(_panel)
 
+	_window_controls = Control.new()
+	_window_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer.add_child(_window_controls)
 	_build_titlebar()
 	_add_resize_handle()
+
+
+func fit_window_controls() -> void:
+	# Preserve the previous chrome size even when the game scales above 100%.
+	var window := get_window()
+	var game_scale := window.content_scale_factor
+	var inverse_scale := 1.0 / maxf(1.0, game_scale)
+	_window_controls.scale = Vector2.ONE * inverse_scale
+	_window_controls.size = Vector2(window.size) if game_scale >= 1.0 else window.get_visible_rect().size
+	_menu_center.offset_top = TITLE_BAR_HEIGHT * inverse_scale
 
 
 func open_panel(title: String, subtitle: String, as_title := false) -> VBoxContainer:
@@ -130,9 +145,9 @@ static func label(caption: String, font_size: int, tint := PAPER) -> Label:
 func _build_titlebar() -> void:
 	var frame := PanelContainer.new()
 	frame.name = "TitleBar"
-	_layer.add_child(frame)
+	_window_controls.add_child(frame)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	frame.offset_bottom = 38
+	frame.offset_bottom = TITLE_BAR_HEIGHT
 	frame.add_theme_stylebox_override("panel", _style(Color("#0b1624"), Color("#1c3444"), 2))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
@@ -162,7 +177,8 @@ func _add_window_button(row: HBoxContainer, glyph: String, hint: String, action:
 
 func _add_resize_handle() -> void:
 	var handle := Control.new()
-	_layer.add_child(handle)
+	handle.name = "ResizeGrip"
+	_window_controls.add_child(handle)
 	handle.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	handle.offset_left = -18
 	handle.offset_top = -18

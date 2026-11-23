@@ -13,7 +13,7 @@ tar -xzf MomoyoBlock-linux-x86_64.tar.gz -C "$HOME"
 
 Re-extracting the archive updates the game. Expeditions live under `~/.MomoyoBlock/profile/saves/`. Existing expeditions keep their planets and block edits. Expeditions saved on Relay Nine before 0.4 resume at the landing pad. Choose **New expedition** from the main menu for a randomly generated starting planet in a separate save. **Continue expedition** opens the most recently saved slot, and **Load expedition** lets you pick another. Settings live at `~/.MomoyoBlock/profile/settings.cfg`. The installed game, data, and caches stay under `~/.MomoyoBlock`. Release file and console logging are disabled.
 
-The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize. Larger windows show more terrain at the original tile and interface size.
+The Linux template includes the native Wayland display driver. It requires x86_64 with SSE4.2 and a GPU that supports the selected renderer. The built-in title bar supports moving, minimizing, maximizing, restoring, and closing the window. Drag the lower-right corner to resize. The game, HUD, and menus scale to fit while rendering at the window's native resolution. The title bar and window buttons keep their size when you maximize.
 
 ## Controls
 

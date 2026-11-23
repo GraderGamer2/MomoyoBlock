@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 · 2026-11-23
+
+- Scale the world, HUD, and menus up as the window grows while rendering at the window's native resolution. Keep the title bar, window buttons, and resize grip at their previous size.
+
 ## 0.8.0 · 2026-11-23
 
 - Relay Nine's artificial gravity fades beyond the hull. Falling far enough under the planet's pull drops the explorer above the current planet's landing pad.
