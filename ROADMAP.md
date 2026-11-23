@@ -52,6 +52,7 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Connect life support to power generation and storage. Extend the room system to larger and interconnected habitats.
 - Add storage containers and more recipes that use resources from different environments.
 - Add more mineable blocks, including clay, ice, and mineral deposits, with distinct hardness and crafting uses. Expand construction with bulkheads, ladders, and floor plating.
+- Make mineral deposits more abundant and rare materials more common on hot, volcanic, and other inhospitable planets than on habitable or semi-habitable worlds, rewarding players who prepare for harsher expeditions.
 - Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
 
 ## Later · Crafting grids and habitat fields
