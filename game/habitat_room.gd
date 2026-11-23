@@ -17,7 +17,7 @@ var charge := 0.0
 var fuel_seconds := 0.0
 var _time := 0.0
 var _openings := 0
-var _can_pump := false
+var _has_recycler := false
 var _has_generator := false
 var _charge_capacity := 0.0
 var _generator_cell: Variant = null
@@ -30,30 +30,47 @@ func _init(area: Rect2i, now: float) -> void:
 
 
 static func survey(world: BlockWorld, recycler: Vector2i) -> Rect2i:
-	var start := recycler + Vector2i.UP
+	var area: Rect2i = survey_from(world, recycler + Vector2i.UP).get("bounds", Rect2i())
+	return area if area.end.y == recycler.y else Rect2i()
+
+
+static func survey_from(world: BlockWorld, start: Vector2i) -> Dictionary:
 	if BlockWorld.is_airtight(world.material_at(start)):
-		return Rect2i()
+		return {"issue": "Leave the tile above the equipment clear."}
 	var left := _wall_distance(world, start, Vector2i.LEFT, MAX_WIDTH)
 	var right := _wall_distance(world, start, Vector2i.RIGHT, MAX_WIDTH)
 	var above := _wall_distance(world, start, Vector2i.UP, MAX_HEIGHT)
-	var size := Vector2i(left + right - 1, above)
-	if left == 0 or right == 0 or size.x < 2 or size.y < 2 or size.x > MAX_WIDTH or size.y > MAX_HEIGHT:
-		return Rect2i()
+	var below := _wall_distance(world, start, Vector2i.DOWN, MAX_HEIGHT)
+	var size := Vector2i(left + right - 1, above + below - 1)
+	if left == 0 or right == 0 or size.x < 2 or size.x > MAX_WIDTH:
+		return {"issue": "Fit sealed side walls around an interior 2 to 16 tiles wide."}
+	if above == 0 or below == 0 or size.y < 2 or size.y > MAX_HEIGHT:
+		return {"issue": "Fit a sealed floor and roof around an interior 2 to 10 tiles high."}
 	var area := Rect2i(start - Vector2i(left - 1, above - 1), size)
-	if _open_edges(world, area) > 0 or _has_walls_inside(world, area):
-		return Rect2i()
-	return area
+	var gap := _shell_gap(world, area)
+	if not gap.is_empty():
+		return {"issue": gap}
+	if _has_walls_inside(world, area):
+		return {"issue": "Keep each sealed room rectangular. Put airlocks in the side walls."}
+	return {"bounds": area}
 
 
-func sync(world: BlockWorld, recycler: Vector2i) -> void:
+func sync(world: BlockWorld, floor_anchor: Vector2i) -> void:
 	_air_cells.clear()
 	_openings = 0
-	_can_pump = false
-	var recycler_installed := world.material_at(recycler) == B.RECYCLER
-	_sync_power(world, recycler_installed)
-	var start := recycler + Vector2i.UP
-	if not bounds.has_point(start) or BlockWorld.is_airtight(world.material_at(start)):
-		return
+	var start := floor_anchor + Vector2i.UP
+	if BlockWorld.is_airtight(world.material_at(start)):
+		for x in range(bounds.position.x, bounds.end.x):
+			var candidate := Vector2i(x, bounds.end.y - 1)
+			if not BlockWorld.is_airtight(world.material_at(candidate)):
+				start = candidate
+				break
+	if bounds.has_point(start) and not BlockWorld.is_airtight(world.material_at(start)):
+		_trace_air(world, start)
+	_sync_power(world)
+
+
+func _trace_air(world: BlockWorld, start: Vector2i) -> void:
 	_air_cells[start] = true
 	var frontier: Array[Vector2i] = [start]
 	var index := 0
@@ -70,18 +87,24 @@ func sync(world: BlockWorld, recycler: Vector2i) -> void:
 				frontier.append(next)
 			else:
 				_openings += 1
-	_can_pump = sealed() and recycler_installed
 
 
-func _sync_power(world: BlockWorld, recycler_installed: bool) -> void:
+func _sync_power(world: BlockWorld) -> void:
+	_has_recycler = false
 	_has_generator = false
-	_charge_capacity = RECYCLER_BUFFER if recycler_installed else 0.0
+	_charge_capacity = 0.0
+	var recycler_buffer := 0.0
 	for x in range(bounds.position.x, bounds.end.x):
-		match world.material_at(Vector2i(x, bounds.end.y)):
+		var tile := Vector2i(x, bounds.end.y)
+		match world.material_at(tile):
+			B.RECYCLER:
+				_has_recycler = _has_recycler or contains(tile + Vector2i.UP)
+				recycler_buffer = RECYCLER_BUFFER
 			B.GENERATOR:
 				_has_generator = true
 			B.BATTERY:
 				_charge_capacity += BATTERY_CAPACITY
+	_charge_capacity += recycler_buffer
 	charge = minf(charge, _charge_capacity)
 	if _generator_cell != null and (not floor_contains(_generator_cell) or world.material_at(_generator_cell) != B.GENERATOR):
 		_generator_cell = null
@@ -100,40 +123,98 @@ func floor_contains(cell: Vector2i) -> bool:
 	return cell.y == bounds.end.y and bounds.has_point(cell + Vector2i.UP)
 
 
+static func find_recycler(world: BlockWorld, area: Rect2i) -> Variant:
+	for x in range(area.position.x, area.end.x):
+		var cell := Vector2i(x, area.end.y)
+		if world.material_at(cell) == B.RECYCLER:
+			return cell
+	return null
+
+
+static func side_airlocks(world: BlockWorld, area: Rect2i) -> Array[Vector2i]:
+	var locks: Array[Vector2i] = []
+	for x: int in [area.position.x - 1, area.end.x]:
+		for y in range(area.position.y, area.end.y - 1):
+			var panel := Vector2i(x, y)
+			if world.material_at(panel) == B.AIRLOCK and world.material_at(panel + Vector2i.DOWN) == B.AIRLOCK:
+				locks.append(panel)
+	return locks
+
+
+func connects_at(panel: Vector2i) -> bool:
+	var inside := panel + (Vector2i.RIGHT if panel.x < bounds.position.x else Vector2i.LEFT)
+	return contains(inside) and contains(inside + Vector2i.DOWN)
+
+
 func refuel(cell: Vector2i) -> void:
 	_generator_cell = cell
 	fuel_seconds = FUEL_DURATION
 
 
-func has_reserves() -> bool:
-	return air > 0.0 or powered()
+func keep_record(world: BlockWorld) -> bool:
+	return (sealed() and not _air_cells.is_empty()) or _charge_capacity > 0.0 or _has_generator \
+			or air > 0.0 or powered() or not side_airlocks(world, bounds).is_empty()
 
 
 func powered() -> bool:
 	return fuel_seconds > 0.0 or charge > 0.0
 
 
+func recycles_air() -> bool:
+	return sealed() and _has_recycler
+
+
 func advance_to(now: float) -> void:
-	var seconds := now - _time
+	advance_network([self], now)
+
+
+static func advance_network(rooms: Array, now: float) -> void:
+	var last_time := 0.0
+	for room: HabitatRoom in rooms:
+		last_time = maxf(last_time, room._time)
+	var seconds := now - last_time
 	if seconds <= 0.0:
 		return
-	_time = now
-	# A working recycler draws one unit per second. Any surplus charges the room's batteries.
-	var generated_for := minf(seconds, fuel_seconds)
-	fuel_seconds -= generated_for
-	if fuel_seconds == 0.0:
-		_generator_cell = null
-	var draw := 1.0 if _can_pump else 0.0
-	charge = minf(_charge_capacity, charge + generated_for * (GENERATOR_OUTPUT - draw))
-	var pumping_for := 0.0
-	if _can_pump:
-		var battery_time := minf(seconds - generated_for, charge)
-		charge -= battery_time
-		pumping_for = generated_for + battery_time
+	var generator_time := 0.0
+	var generated_charge := 0.0
+	var recycling := false
+	var volume := 0
+	for room: HabitatRoom in rooms:
+		if room._time < last_time:
+			room.advance_to(last_time)
+		room._time = now
+		recycling = recycling or room.recycles_air()
+		if room.sealed():
+			volume += room._air_cells.size()
+		var burned := minf(seconds, room.fuel_seconds)
+		room.fuel_seconds -= burned
+		if room.fuel_seconds == 0.0:
+			room._generator_cell = null
+		generator_time = maxf(generator_time, burned)
+		generated_charge += burned * GENERATOR_OUTPUT
+	# Any running generator covers the recycler. Pool its surplus and use batteries after the last one stops.
+	var pumping_for := generator_time if recycling else 0.0
+	var surplus := generated_charge - pumping_for
+	for room: HabitatRoom in rooms:
+		var stored := minf(room._charge_capacity - room.charge, surplus)
+		room.charge += stored
+		surplus -= stored
+	if recycling:
+		for room: HabitatRoom in rooms:
+			var discharged := minf(room.charge, maxf(0.0, seconds - pumping_for))
+			room.charge -= discharged
+			pumping_for += discharged
+	var pump_rate := CabinAtmosphere.PUMP_RATE * minf(1.0, STANDARD_VOLUME / maxi(1, volume))
+	for room: HabitatRoom in rooms:
+		room._advance_air(seconds, pumping_for, pump_rate)
+
+
+func _advance_air(seconds: float, pumping_for: float, pump_rate: float) -> void:
 	if _openings > 0:
 		air = CabinAtmosphere.vent(air, _openings, seconds)
 		return
-	var pump_rate := CabinAtmosphere.PUMP_RATE * minf(1.0, STANDARD_VOLUME / maxi(1, _air_cells.size()))
+	if _air_cells.is_empty():
+		pumping_for = 0.0
 	air = move_toward(air, SurvivalState.CABIN_PRESSURE, pumping_for * pump_rate)
 	air = move_toward(air, 0.0, maxf(0.0, seconds - pumping_for) * AIR_LOSS_WITHOUT_POWER)
 
@@ -142,23 +223,33 @@ func breathable() -> bool:
 	return air >= CabinAtmosphere.BREATHABLE_PRESSURE
 
 
-func condition() -> String:
+func condition(recycling: bool, supplied: bool) -> String:
 	if _openings > 0:
 		return "Habitat venting"
-	if _can_pump and powered() and air < SurvivalState.CABIN_PRESSURE:
+	if recycling and supplied and air < SurvivalState.CABIN_PRESSURE:
 		return "Habitat breathable" if breathable() else "Habitat filling"
 	if breathable():
-		return "Habitat air" if _can_pump and powered() else "Habitat on reserve air"
-	return "Habitat needs power" if _can_pump else "Habitat offline"
+		return "Habitat air" if recycling and supplied else "Habitat on reserve air"
+	return "Habitat needs power" if recycling else "Habitat offline"
 
 
-func power_reading() -> String:
-	var battery := "Battery %d/%d s" % [ceili(charge), roundi(_charge_capacity)]
-	if fuel_seconds > 0.0:
-		return "Fuel %d s · %s" % [ceili(fuel_seconds), battery]
-	if charge > 0.0:
-		return battery
-	return "Power off · Load fuel" if _has_generator else "Power off · Fit a generator"
+static func network_reading(rooms: Array) -> String:
+	var fuel := 0.0
+	var reserve := 0.0
+	var capacity := 0.0
+	var has_generator := false
+	for room: HabitatRoom in rooms:
+		fuel = maxf(fuel, room.fuel_seconds)
+		reserve += room.charge
+		capacity += room._charge_capacity
+		has_generator = has_generator or room._has_generator
+	var battery := "Battery %d/%d s" % [ceili(reserve), roundi(capacity)]
+	var reading := "Power off · Load fuel" if has_generator else "Power off · Fit a generator"
+	if fuel > 0.0:
+		reading = "Fuel %d s · %s" % [ceili(fuel), battery]
+	elif reserve > 0.0:
+		reading = battery
+	return "%d rooms · %s" % [rooms.size(), reading] if rooms.size() > 1 else reading
 
 
 func snapshot() -> Dictionary:
@@ -214,15 +305,18 @@ static func _wall_distance(world: BlockWorld, start: Vector2i, direction: Vector
 	return 0
 
 
-static func _open_edges(world: BlockWorld, area: Rect2i) -> int:
-	var leaks := 0
+static func _shell_gap(world: BlockWorld, area: Rect2i) -> String:
 	for x in range(area.position.x, area.end.x):
-		leaks += int(not BlockWorld.is_airtight(world.material_at(Vector2i(x, area.position.y - 1))))
-		leaks += int(not BlockWorld.is_airtight(world.material_at(Vector2i(x, area.end.y))))
+		if not BlockWorld.is_airtight(world.material_at(Vector2i(x, area.position.y - 1))):
+			return "Seal every roof tile with alloy or pressure glass."
+		if not BlockWorld.is_airtight(world.material_at(Vector2i(x, area.end.y))):
+			return "Seal the entire floor with alloy, pressure glass, or habitat equipment."
 	for y in range(area.position.y, area.end.y):
-		leaks += int(not BlockWorld.is_airtight(world.material_at(Vector2i(area.position.x - 1, y))))
-		leaks += int(not BlockWorld.is_airtight(world.material_at(Vector2i(area.end.x, y))))
-	return leaks
+		var left_sealed := BlockWorld.is_airtight(world.material_at(Vector2i(area.position.x - 1, y)))
+		var right_sealed := BlockWorld.is_airtight(world.material_at(Vector2i(area.end.x, y)))
+		if not left_sealed or not right_sealed:
+			return "Seal both side walls. Stack two airlock panels for an entrance."
+	return ""
 
 
 static func _has_walls_inside(world: BlockWorld, area: Rect2i) -> bool:

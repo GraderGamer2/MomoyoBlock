@@ -52,9 +52,14 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Run oxygen recyclers from fuel generators and batteries. Track remaining fuel, reserve power, and breathable air.
 - Let players build larger sealed rooms and retain air, fuel, and charge across trips and saves.
 
-## Next · Habitat networks, storage, and ecology
+## 0.10 · Connected habitats and sandbox materials
 
-- Connect adjacent rooms with airlocks and share power and life support across a habitat.
+- Connect adjacent rooms through two-panel airlocks and share power and life support across the network.
+- Commission valid shelters directly from their generators and guide players through incomplete shells.
+- Give playtesters a per-expedition sandbox toggle and a palette of unlimited building blocks.
+
+## Next · Storage and ecology
+
 - Add storage containers and more recipes that use resources from different environments.
 - Add more mineable blocks, including clay, ice, and mineral deposits, with distinct hardness and crafting uses. Expand construction with bulkheads, ladders, and floor plating.
 - Make mineral deposits more abundant and rare materials more common on hot, volcanic, and other inhospitable planets than on habitable or semi-habitable worlds, rewarding players who prepare for harsher expeditions.

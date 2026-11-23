@@ -11,7 +11,8 @@ const FIELD_EQUIPMENT_FORMAT := 6
 const SLOTTED_FORMAT := 7
 const HABITAT_FORMAT := 8
 const VACUUM_RECOVERY_FORMAT := 9
-const FORMAT := 10
+const POWER_FORMAT := 10
+const FORMAT := 11
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -104,10 +105,12 @@ func read() -> Dictionary:
 		var vitals: Variant = state.get("vitals")
 		if vitals is Dictionary:
 			vitals["vacuum_recovery"] = 0.0
-	if loaded_format < FORMAT:
+	if loaded_format < POWER_FORMAT:
 		if not _upgrade_habitat_power(state):
 			read_error = ERR_FILE_CORRUPT
 			return {}
+	if loaded_format < FORMAT:
+		state.sandbox_enabled = false
 		state.format = FORMAT
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
@@ -280,6 +283,8 @@ static func _state_data_valid(state: Dictionary) -> bool:
 	if not state.get("sector") is Vector2i or not planets is Dictionary:
 		return false
 	if not SurvivalState.valid_snapshot(state.get("vitals")) or not ExpeditionKit.valid_snapshot(state.get("kit")):
+		return false
+	if not state.get("sandbox_enabled") is bool:
 		return false
 	var pressure: Variant = state.get("cabin_pressure")
 	if not (pressure is int or pressure is float) or not is_finite(float(pressure)) or pressure < 0.0 or pressure > SurvivalState.CABIN_PRESSURE:

@@ -204,13 +204,17 @@ func show_orbital_gravity(gravity: float, relay_field_active: bool) -> void:
 		_region.text = reading
 
 
-func show_inventory(inventory: ExpeditionInventory, selected: int, pulse_level: int) -> void:
+func show_inventory(inventory: ExpeditionInventory, selected: int, pulse_level: int,
+		sandbox: bool, sandbox_material: int) -> void:
 	for i in _slots.size():
-		_slots[i].show_stack(inventory.item_at(i), inventory.quantity_at(i), i == selected)
+		_slots[i].show_stack(inventory.item_at(i), inventory.quantity_at(i),
+				i == selected and sandbox_material == BlockWorld.Block.EMPTY)
 	var tool := "Starter pulse" if pulse_level == 0 else "Pulse level %d" % pulse_level
-	_held_item.text = "%s · %s tiles      %s" % [
-		tool, str(ExpeditionKit.PULSE_REACH_TILES[pulse_level]), ExpeditionInventory.item_name(inventory.item_at(selected)),
-	]
+	var material := inventory.item_at(selected) if sandbox_material == BlockWorld.Block.EMPTY else sandbox_material
+	var held := ExpeditionInventory.item_name(material)
+	if sandbox:
+		held = "Sandbox · B Materials" if material == BlockWorld.Block.EMPTY else held + " ∞ · B Materials"
+	_held_item.text = "%s · %s tiles      %s" % [tool, str(ExpeditionKit.PULSE_REACH_TILES[pulse_level]), held]
 
 
 func show_travel(region: int, nearby: bool, planet_name: String, direction: Vector2i, interaction: String) -> void:

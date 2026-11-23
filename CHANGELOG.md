@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 · 2026-11-23
+
+- Right-click a fuel generator to commission a correctly built shelter and refuel in one action. Setup feedback identifies incomplete shells and missing recyclers.
+- Link sealed rooms with pairs of airlock panels. The network shares oxygen production, generators, and battery reserves. A breached room vents independently and refills after repair.
+- Add per-expedition sandbox materials with unlimited building blocks, crafting ingredients, fuel, food, water, and suit air supplies.
+
 ## 0.9.0 · 2026-11-23
 
 - Power habitat recyclers with craftable fuel generators and floor batteries. One fuel cell runs a generator for 90 seconds, and excess output charges the batteries. Habitats slowly lose air when power runs out.

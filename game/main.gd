@@ -25,12 +25,15 @@ var kit := ExpeditionKit.new()
 var inventory := ExpeditionInventory.starter()
 var region := BlockWorld.Region.SURFACE
 var selected := 0
+var sandbox_enabled := false
+var sandbox_material := BlockWorld.Block.EMPTY
 
 var _planet_journals: Dictionary[Vector2i, PackedByteArray] = {}
 var _station_journal := PackedByteArray()
 var _habitat_saves: Dictionary = {}
 var _habitat_zone := Vector3i.ZERO
 var _habitats: Dictionary[Vector2i, HabitatRoom] = {}
+var _habitat_networks := HabitatNetworks.new()
 var _near_beacon := false
 var save_filename := ExpeditionSave.DEFAULT_FILE
 var _save: ExpeditionSave
@@ -71,6 +74,7 @@ func _ready() -> void:
 		origin = state.origin
 		inventory.restore(state.inventory)
 		selected = state.selected
+		sandbox_enabled = state.sandbox_enabled
 		_planet_journals.assign(state.planets)
 		_habitat_saves = state.habitats
 		_load_planet(state.sector)
@@ -160,11 +164,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9:
 			selected = event.physical_keycode - KEY_1
+			sandbox_material = BlockWorld.Block.EMPTY
 			_show_inventory()
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			var direction := -1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1
 			selected = posmod(selected + direction, ExpeditionInventory.HOTBAR_SLOTS)
+			sandbox_material = BlockWorld.Block.EMPTY
 			_show_inventory()
 
 
@@ -183,7 +189,7 @@ func begin_mining(cell: Vector2i) -> bool:
 	var item := BlockWorld.mined_material(material)
 	if not BlockWorld.is_placeable(item):
 		return false
-	if not inventory.has_room(item, 1, survival.suit_equipped):
+	if not sandbox_enabled and not inventory.has_room(item, 1, survival.suit_equipped):
 		_hud.show_status("Inventory is full", false)
 		return false
 	if not terrain.pulse_path_clear(explorer.position, cell):
@@ -217,7 +223,7 @@ func advance_mining(delta: float, aim: Vector2i, held: bool) -> bool:
 	var cell := _mine_cell
 	var material := _mine_material
 	cancel_mining()
-	if not inventory.add(BlockWorld.mined_material(material), 1, survival.suit_equipped):
+	if not inventory.add(BlockWorld.mined_material(material), 1, survival.suit_equipped) and not sandbox_enabled:
 		_hud.show_status("Inventory is full", false)
 		return false
 	_flash_pulse(cell)
@@ -256,7 +262,7 @@ func use_or_place(cell: Vector2i) -> bool:
 		return false
 	if terrain.block_at(cell) == BlockWorld.Block.GENERATOR:
 		return _refuel_generator(cell)
-	var item := inventory.item_at(selected)
+	var item := _held_item()
 	if item == ExpeditionInventory.FUEL_CELL:
 		_hud.show_status("Right-click a fuel generator to load a cell.", false)
 		return false
@@ -270,36 +276,37 @@ func _refuel_generator(cell: Vector2i) -> bool:
 	if not terrain.pulse_path_clear(explorer.position, cell):
 		_hud.show_status("The generator is blocked.", false)
 		return false
-	for room: HabitatRoom in _habitats.values():
-		if not room.floor_contains(cell):
-			continue
-		room.advance_to(survival.elapsed)
-		if room.fuel_seconds > 0.0:
-			_hud.show_status("The habitat generator is still running.", false)
+	var room := _habitat_at_floor(cell)
+	if room == null:
+		if not _commission_habitat(cell):
 			return false
-		if not inventory.take(ExpeditionInventory.FUEL_CELL, 1, survival.suit_equipped):
-			_hud.show_status("Craft a fuel cell at a workbench to refuel.", false)
-			return false
-		room.refuel(cell)
-		_hud.show_status("Generator running.")
-		_show_inventory()
-		_update_survival_display()
-		return true
-	_hud.show_status("Fit the generator in the floor of a commissioned habitat.", false)
-	return false
+		room = _habitat_at_floor(cell)
+	HabitatRoom.advance_network(_habitat_networks.members(room), survival.elapsed)
+	if room.fuel_seconds > 0.0:
+		_hud.show_status("The habitat generator is still running.", false)
+		return false
+	if not sandbox_enabled and not inventory.take(ExpeditionInventory.FUEL_CELL, 1, survival.suit_equipped):
+		_hud.show_status("Craft a fuel cell at a workbench to refuel.", false)
+		return false
+	room.refuel(cell)
+	_hud.show_status("Generator running.")
+	_show_inventory()
+	_update_survival_display()
+	return true
 
 
 func place(cell: Vector2i) -> bool:
 	if _in_transit or not _within_reach(cell):
 		_feedback_on_distant_action(cell)
 		return false
-	var material := inventory.item_at(selected)
+	var material := _held_item()
 	if terrain.block_at(cell) != BlockWorld.Block.EMPTY or not BlockWorld.is_placeable(material):
 		return false
 	var tile_rect := Rect2(terrain.scene_point(cell), Vector2.ONE * BlockWorld.TILE_SIZE)
 	if tile_rect.intersects(explorer.body_rect()):
 		return false
-	inventory.take_from(selected)
+	if not sandbox_enabled:
+		inventory.take_from(selected)
 	terrain.set_block(cell, material)
 	if material == BlockWorld.Block.WORKBENCH:
 		_hud.show_status("Workbench deployed")
@@ -352,7 +359,7 @@ func workbench_name() -> String:
 func craft(recipe: int) -> bool:
 	if _in_transit or (recipe != ExpeditionKit.Recipe.WORKBENCH and workbench_name().is_empty()):
 		return false
-	if not kit.craft(recipe, inventory, survival):
+	if not kit.craft(recipe, inventory, survival, sandbox_enabled):
 		return false
 	_show_inventory()
 	_update_survival_display()
@@ -377,7 +384,7 @@ func consume(item: int) -> bool:
 	if item == ExpeditionInventory.CANISTER and not survival.suit_active():
 		_hud.show_status("Equip a working suit to use spare air", false)
 		return false
-	if inventory.count(item, survival.suit_equipped) == 0:
+	if not sandbox_enabled and inventory.count(item, survival.suit_equipped) == 0:
 		_hud.show_status("No %s in accessible storage" % ExpeditionInventory.item_name(item).to_lower(), false)
 		return false
 	match item:
@@ -396,7 +403,8 @@ func consume(item: int) -> bool:
 			survival.oxygen = minf(SurvivalState.MAX_LEVEL, survival.oxygen + ExpeditionKit.CANISTER_REFILL)
 		_:
 			return false
-	inventory.take(item, 1, survival.suit_equipped)
+	if not sandbox_enabled:
+		inventory.take(item, 1, survival.suit_equipped)
 	_show_inventory()
 	_update_survival_display()
 	return true
@@ -457,36 +465,64 @@ func _airlock_exit() -> Variant:
 	return null
 
 
-func _commission_habitat(recycler: Vector2i) -> bool:
-	var area := HabitatRoom.survey(terrain.world, recycler)
-	if not area.has_area():
-		_hud.show_status("Life support needs a sealed room with the recycler in its floor.", false)
+func _commission_habitat(equipment: Vector2i) -> bool:
+	var survey := HabitatRoom.survey_from(terrain.world, equipment + Vector2i.UP)
+	if not survey.has("bounds"):
+		_hud.show_status(survey.issue, false)
 		return false
-	var retired: Array[Vector2i] = []
-	var room: HabitatRoom = _habitats.get(recycler)
-	for device in _habitats:
-		var other: HabitatRoom = _habitats[device]
-		if device == recycler or not area.intersects(other.bounds):
-			continue
-		if terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
-			_hud.show_status("That room already has a commissioned recycler.", false)
-			return false
-		if room == null and area == other.bounds:
-			room = other
-		retired.append(device)
-	for device in retired:
-		_habitats.erase(device)
-	if room == null:
-		room = HabitatRoom.new(area, survival.elapsed)
-	else:
-		room.advance_to(survival.elapsed)
-		room.air *= minf(1.0, float(room.bounds.get_area()) / area.get_area())
-		room.bounds = area
-	_habitats[recycler] = room
-	room.sync(terrain.world, recycler)
-	_hud.show_status("Life support online." if room.powered() else "Habitat commissioned. Right-click its generator to load fuel.", room.powered())
+	var area: Rect2i = survey.bounds
+	if equipment.y != area.end.y:
+		_hud.show_status("Fit the equipment into the bottom row of the habitat.", false)
+		return false
+	var rooms := HabitatNetworks.discover(terrain.world, area)
+	var layout := _plan_habitat_layout(rooms)
+	if layout.is_empty():
+		return false
+	_habitat_networks.advance_to(survival.elapsed)
+	for anchor: Vector2i in layout:
+		var chamber: Rect2i = layout[anchor]
+		var room: HabitatRoom = _habitats.get(anchor)
+		if room == null:
+			room = HabitatRoom.new(chamber, survival.elapsed)
+			_habitats[anchor] = room
+		else:
+			room.air *= minf(1.0, float(room.bounds.get_area()) / chamber.get_area())
+			room.bounds = chamber
+		room.sync(terrain.world, anchor)
+	_rebuild_habitat_networks()
+	var count := _habitat_networks.members(_habitat_at_floor(equipment)).size()
+	_hud.show_status("Life support linked across %d rooms." % count if count > 1 else "Habitat ready. Right-click its generator to load fuel.")
 	_update_survival_display()
 	return true
+
+
+func _plan_habitat_layout(rooms: Array[Rect2i]) -> Dictionary[Vector2i, Rect2i]:
+	var layout: Dictionary[Vector2i, Rect2i] = {}
+	var has_recycler := false
+	for chamber in rooms:
+		var recycler: Variant = HabitatRoom.find_recycler(terrain.world, chamber)
+		has_recycler = has_recycler or recycler != null
+		var anchor := Vector2i(chamber.position.x, chamber.end.y) if recycler == null else Vector2i(recycler)
+		for known: Vector2i in _habitats:
+			if _habitats[known].bounds == chamber:
+				anchor = known
+				break
+		for known: Vector2i in _habitats:
+			if known != anchor and chamber.intersects(_habitats[known].bounds):
+				_hud.show_status("This shell overlaps a commissioned room. Keep a dividing wall with an airlock.", false)
+				return {}
+		layout[anchor] = chamber
+	if not has_recycler:
+		_hud.show_status("Fit an oxygen recycler in this floor or connect to one through a two-panel airlock.", false)
+		return {}
+	return layout
+
+
+func _habitat_at_floor(cell: Vector2i) -> HabitatRoom:
+	for room: HabitatRoom in _habitats.values():
+		if room.floor_contains(cell):
+			return room
+	return null
 
 
 func land_at(address: Vector2i) -> bool:
@@ -506,7 +542,7 @@ func save_expedition(show_feedback := true) -> bool:
 		"region": region, "sector": sector, "origin": terrain.origin_cell, "position": explorer.position,
 		"inventory": inventory.snapshot(), "selected": selected, "planets": _planet_journals,
 		"station": _station_journal, "cabin_pressure": cabin.pressure, "vitals": survival.snapshot(), "kit": kit.snapshot(),
-		"habitats": _habitat_saves,
+		"habitats": _habitat_saves, "sandbox_enabled": sandbox_enabled,
 	})
 	if show_feedback:
 		_hud.show_status("Expedition saved" if result == OK else "Could not save the expedition", result == OK)
@@ -609,7 +645,7 @@ func _habitat_here(now: float) -> HabitatRoom:
 	var cell := terrain.world_cell(explorer.position)
 	for room: HabitatRoom in _habitats.values():
 		if room.contains(cell):
-			room.advance_to(now)
+			HabitatRoom.advance_network(_habitat_networks.members(room), now)
 			return room
 	return null
 
@@ -617,11 +653,11 @@ func _habitat_here(now: float) -> HabitatRoom:
 func _store_habitats() -> void:
 	if terrain.world == null:
 		return
+	_habitat_networks.advance_to(survival.elapsed)
 	var states := {}
 	for device in _habitats:
 		var room: HabitatRoom = _habitats[device]
-		room.advance_to(survival.elapsed)
-		if room.has_reserves() or terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
+		if room.keep_record(terrain.world):
 			states[device] = room.snapshot()
 	if states.is_empty():
 		_habitat_saves.erase(_habitat_zone)
@@ -634,7 +670,13 @@ func _load_habitats() -> void:
 	_habitats.clear()
 	var states: Dictionary = _habitat_saves.get(_habitat_zone, {})
 	for device: Vector2i in states:
-		_habitats[device] = HabitatRoom.from_snapshot(states[device], terrain.world, device, survival.elapsed)
+		_habitats[device] = HabitatRoom.from_snapshot(states[device], terrain.world, device, states[device].time)
+	_rebuild_habitat_networks()
+	_habitat_networks.advance_to(survival.elapsed)
+
+
+func _rebuild_habitat_networks() -> void:
+	_habitat_networks.rebuild(terrain.world, _habitats.values())
 
 
 func _update_survival_display(seconds := 0.0) -> void:
@@ -650,6 +692,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var outside_temperature := surface.planet.temperature_at(elapsed, front) if on_surface else survival.vacuum_exposure_temperature()
 	var temperature := outside_temperature
 	var breathable := _breathable_with(habitat)
+	var network: Array = [] if habitat == null else _habitat_networks.members(habitat)
 	var air := "Breathable air" if breathable else "Suit oxygen in use"
 	var at_beacon := _at_beacon()
 	if inside:
@@ -669,7 +712,8 @@ func _update_survival_display(seconds := 0.0) -> void:
 		var clean_air := habitat.air / SurvivalState.CABIN_PRESSURE
 		pressure = lerpf(pressure, SurvivalState.CABIN_PRESSURE, clean_air)
 		temperature = lerpf(temperature, SurvivalState.CABIN_TEMPERATURE, clean_air)
-		air = habitat.condition()
+		air = habitat.condition(network.any(func(room: HabitatRoom) -> bool: return room.recycles_air()),
+				network.any(func(room: HabitatRoom) -> bool: return room.powered()))
 	elif on_surface:
 		if pressure > SurvivalState.SUIT_PRESSURE_LIMIT:
 			air = "Suit strain · liner equipped" if kit.liner else "Suit strain · Pressure liner needed"
@@ -707,7 +751,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var habitat_power := ""
 	if habitat != null and not at_beacon:
 		environment = "Habitat air %.0f%% · %.0f kPa" % [habitat.air * 100.0 / SurvivalState.CABIN_PRESSURE, pressure]
-		habitat_power = habitat.power_reading()
+		habitat_power = HabitatRoom.network_reading(network)
 	_hud.show_survival(survival, inventory, air, weather_text if on_surface else "Orbit", environment,
 			(on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT) or
 			(inside and not cabin.breaches.is_empty()),
@@ -749,12 +793,14 @@ func _on_block_changed(cell: Vector2i) -> void:
 		var room: HabitatRoom = _habitats[device]
 		if not room.bounds.grow(1).has_point(cell):
 			continue
-		room.advance_to(survival.elapsed)
+		if not habitat_changed:
+			_habitat_networks.advance_to(survival.elapsed)
 		room.sync(terrain.world, device)
-		if not room.has_reserves() and terrain.world.material_at(device) != BlockWorld.Block.RECYCLER:
+		if not room.keep_record(terrain.world):
 			_habitats.erase(device)
 		habitat_changed = true
 	if habitat_changed:
+		_rebuild_habitat_networks()
 		_update_survival_display()
 	if region != BlockWorld.Region.STATION or not BlockWorld.STATION_PRESSURE_AREA.has_point(cell):
 		return
@@ -874,7 +920,25 @@ func _update_travel() -> void:
 
 
 func _show_inventory() -> void:
-	_hud.show_inventory(inventory, selected, kit.pulse_level)
+	_hud.show_inventory(inventory, selected, kit.pulse_level, sandbox_enabled, sandbox_material)
+
+
+func set_sandbox(enabled: bool) -> void:
+	sandbox_enabled = enabled
+	sandbox_material = BlockWorld.Block.EMPTY
+	_show_inventory()
+
+
+func select_sandbox_material(material: int) -> bool:
+	if not sandbox_enabled or not BlockWorld.is_placeable(material):
+		return false
+	sandbox_material = material
+	_show_inventory()
+	return true
+
+
+func _held_item() -> int:
+	return sandbox_material if sandbox_material != BlockWorld.Block.EMPTY else inventory.item_at(selected)
 
 
 func _within_reach(cell: Vector2i, reach_squared := REACH_SQUARED) -> bool:

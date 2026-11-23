@@ -8,6 +8,8 @@ const TEST_RECYCLER := Vector2i(8, BlockWorld.PAD_ROW)
 const TEST_GENERATOR := Vector2i(9, BlockWorld.PAD_ROW)
 const TEST_BATTERY := Vector2i(7, BlockWorld.PAD_ROW)
 const TEST_ROOF := Vector2i(8, BlockWorld.PAD_ROW - 4)
+const LINKED_RECYCLER := Vector2i(18, BlockWorld.PAD_ROW)
+const LINKED_GENERATOR := Vector2i(24, BlockWorld.PAD_ROW)
 const TEST_SAND_PLACEMENT := Vector2i(3, BlockWorld.PAD_ROW - 1)
 
 var _failures := 0
@@ -199,6 +201,16 @@ func _run() -> void:
 		_expect(game.breathable_here(), "Pressure glass restores the seal and the recycler supplies air")
 	else:
 		_expect(false, "A commissioned habitat is restored on reload")
+	_check_linked_habitats(game)
+	_expect(game.save_expedition(), "Both rooms of a powered habitat can be saved")
+	game.queue_free()
+	await get_tree().process_frame
+	game = _open_game()
+	await _frames(5)
+	var reloaded_room: HabitatRoom = game._habitat_at_floor(LINKED_GENERATOR)
+	var reloaded_network := game._habitat_networks.members(reloaded_room)
+	_expect(reloaded_room != null and reloaded_network.size() == 2 and reloaded_room.fuel_seconds > 0.0,
+			"Reloading rebuilds the shared circuit and retains the generator's fuel")
 	game.explorer.position = BlockWorld.pad_position()
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.begin_travel(), "The second planet connects back to Relay Nine")
@@ -293,6 +305,7 @@ func _check_menu() -> void:
 	_expect(app.game.inventory.item_at(8) == B.SOIL and app.game.inventory.item_at(0) == B.EMPTY,
 			"The inventory menu moves stacks into the ninth hotbar slot")
 	app.resume_expedition()
+	await _check_sandbox(app)
 	app.game.survival.hunger = 88.0
 	app.show_pause()
 	await _frames(30)
@@ -305,15 +318,54 @@ func _check_menu() -> void:
 	await _frames(5)
 	_expect(app.game.universe_seed == first_seed and app.game.sector == first_sector and app.game.surface.planet.title() == first_title,
 			"Continuing an expedition restores the same generated starting planet")
+	_expect(app.game.sandbox_enabled, "Sandbox mode persists with its expedition")
+	app.show_sandbox(MomoyoApp.Screen.EXPLORING)
+	var toggle := app.find_child("SandboxToggle", true, false) as Button
+	toggle.pressed.emit()
+	_expect(not app.game.sandbox_enabled and not app.game.select_sandbox_material(B.GENERATOR), "Sandbox mode can be turned off again")
 	app.return_to_menu()
 	await _frames(3)
 	app.start_new_expedition()
 	await _frames(3)
 	_expect(app.game.universe_seed != first_seed and ExpeditionSave.slots().size() == 2,
 			"A second expedition starts a new universe and keeps the previous slot")
+	_expect(not app.game.sandbox_enabled, "New expeditions default to ordinary material costs")
 	_expect(ExpeditionSave.new().read().get("universe_seed") == first_seed, "The original expedition is preserved")
 	app.queue_free()
 	await get_tree().process_frame
+
+
+func _check_sandbox(app: MomoyoApp) -> void:
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_B
+	key.pressed = true
+	Input.parse_input_event(key)
+	await _frames(3)
+	_expect(app.screen == MomoyoApp.Screen.SANDBOX and not app.game.sandbox_enabled,
+			"B opens the sandbox menu without enabling free materials")
+	var toggle := app.find_child("SandboxToggle", true, false) as Button
+	if toggle == null:
+		_expect(false, "Sandbox mode has an enable switch")
+		return
+	toggle.pressed.emit()
+	var palette_entry := app.find_child("SandboxBlock%d" % B.GLASS, true, false) as Button
+	_expect(app.game.sandbox_enabled and palette_entry != null, "Enabling sandbox mode reveals the material palette")
+	if palette_entry == null:
+		return
+	palette_entry.pressed.emit()
+	var game := app.game
+	var counts := game.inventory.snapshot()
+	var left := Vector2i(-1, BlockWorld.PAD_ROW - 2)
+	var right := Vector2i(1, BlockWorld.PAD_ROW - 2)
+	_expect(app.screen == MomoyoApp.Screen.EXPLORING and game.use_or_place(left) and game.use_or_place(right)
+			and game.terrain.block_at(left) == B.GLASS and game.terrain.block_at(right) == B.GLASS
+			and game.inventory.snapshot() == counts, "A palette block places repeatedly without occupying or spending an inventory stack")
+	_expect(not game.place(Vector2i(40, BlockWorld.PAD_ROW - 2)), "Sandbox mode preserves building reach")
+	var soil := game.inventory.count(B.SOIL)
+	var stone := game.inventory.count(B.STONE)
+	_expect(game.craft(ExpeditionKit.Recipe.WORKBENCH) and game.inventory.count(B.WORKBENCH) == 1
+			and game.inventory.count(B.SOIL) == soil and game.inventory.count(B.STONE) == stone,
+			"Sandbox crafting preserves the carried ingredients")
 
 
 func _check_window_layout(app: MomoyoApp) -> void:
@@ -580,17 +632,19 @@ func _check_habitat(game: MomoyoGame) -> Dictionary:
 		game.terrain.set_block(cell, B.EMPTY)
 		_expect(_place_habitat_device(game, cell, equipment[cell]), "Crafted habitat equipment can be placed in the floor")
 	var fuel := game.inventory.count(I.FUEL_CELL)
-	_expect(fuel == 2 and not game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel,
-			"A generator waits for a commissioned room before accepting fuel")
+	_expect(fuel == 2 and not game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel
+			and game._hud._status.text.contains("roof"),
+			"An unsealed roof gives actionable feedback and leaves fuel in inventory")
 	_expect(not game.interact(), "A recycler cannot start with a hole in the roof")
 	game.terrain.set_block(TEST_ROOF, B.GLASS)
-	_expect(game.interact() and not game.breathable_here(), "A sealed habitat can be commissioned before its generator starts")
+	game.terrain.set_block(TEST_RECYCLER, B.ALLOY)
+	_expect(not game.use_or_place(TEST_GENERATOR) and game._hud._status.text.contains("recycler"),
+			"A complete shell without a recycler identifies the missing equipment")
+	game.terrain.set_block(TEST_RECYCLER, B.RECYCLER)
 	var power := game.find_child("HabitatPower", true, false) as Label
-	game._update_survival_display(5.0)
-	_expect(power.visible and power.text.contains("Power off") and not game.breathable_here(),
-			"A newly commissioned habitat waits for power and shows how to start")
-	_expect(game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel - 1,
-			"Using a generator starts it and consumes one fuel cell")
+	_expect(game.use_or_place(TEST_GENERATOR) and game._habitats.has(TEST_RECYCLER)
+			and game.inventory.count(I.FUEL_CELL) == fuel - 1 and not game.breathable_here(),
+			"Right-click commissions a valid habitat and starts its generator in one action")
 	_expect(power.text.contains("90 s") and not game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel - 1,
 			"The HUD shows the fuel timer and a running generator cannot waste another cell")
 	game._update_survival_display(5.0)
@@ -624,6 +678,55 @@ func _check_habitat(game: MomoyoGame) -> Dictionary:
 	_expect(is_equal_approx(room.charge, stored + HabitatRoom.GENERATOR_OUTPUT),
 			"A generator keeps charging while a breach stops the recycler")
 	return room.snapshot()
+
+
+func _check_linked_habitats(game: MomoyoGame) -> void:
+	var floor_y := BlockWorld.PAD_ROW
+	var airlock := Vector2i(21, floor_y - 2)
+	var leaking_roof := Vector2i(23, floor_y - 4)
+	for x in range(17, 26):
+		if x == airlock.x:
+			continue
+		game.terrain.set_block(Vector2i(x, floor_y), B.ALLOY)
+		game.terrain.set_block(Vector2i(x, floor_y - 4), B.GLASS)
+		for y in range(floor_y - 3, floor_y):
+			game.terrain.set_block(Vector2i(x, y), B.EMPTY)
+	for y in range(floor_y - 3, floor_y):
+		game.terrain.set_block(Vector2i(16, y), B.ALLOY)
+		game.terrain.set_block(Vector2i(26, y), B.ALLOY)
+		game.terrain.set_block(Vector2i(21, y), B.AIRLOCK if y >= airlock.y else B.ALLOY)
+	game.terrain.set_block(LINKED_RECYCLER, B.RECYCLER)
+	game.terrain.set_block(LINKED_GENERATOR, B.GENERATOR)
+	game.terrain.set_block(LINKED_GENERATOR + Vector2i.LEFT, B.BATTERY)
+	game.explorer.position = game.terrain.scene_point(LINKED_GENERATOR, Vector2(0.5, -15.0 / BlockWorld.TILE_SIZE))
+	game.explorer.velocity = Vector2.ZERO
+	game.set_sandbox(true)
+	var fuel := game.inventory.count(I.FUEL_CELL)
+	_expect(game.use_or_place(LINKED_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel,
+			"A sandbox generator draws unlimited fuel and links to the recycler in the neighboring room")
+	game.set_sandbox(false)
+	var source: HabitatRoom = game._habitats.get(LINKED_RECYCLER)
+	var annex := game._habitat_at_floor(LINKED_GENERATOR)
+	if source == null or annex == null:
+		_expect(false, "Commissioning discovers both airlock-linked rooms")
+		return
+	game._update_survival_display(12.0)
+	_expect(source.breathable() and annex.breathable() and not annex.recycles_air() and source.charge > 0.0,
+			"A generator and battery share power with a single recycler that supplies both rooms")
+	game.explorer.position = game.terrain.scene_point(Vector2i(22, floor_y - 1), ActiveTerrain.CELL_CENTER)
+	_expect(game.interact() and source.contains(game.terrain.world_cell(game.explorer.position)),
+			"The shared wall airlock lets the explorer cross into the neighboring room")
+	game.terrain.set_block(leaking_roof, B.EMPTY)
+	game._update_survival_display(12.0)
+	_expect(source.breathable() and not annex.breathable(), "A breach vents the damaged annex and leaves the adjoining chamber breathable")
+	game.terrain.set_block(leaking_roof, B.GLASS)
+	game._update_survival_display(6.0)
+	_expect(annex.breathable(), "The annex refills automatically after repair")
+	game.terrain.set_block(airlock, B.ALLOY)
+	_expect(game._habitat_networks.members(annex).size() == 1 and game._habitat_networks.members(source).size() == 1,
+			"Replacing one airlock panel with an airtight wall separates the power circuits")
+	game.terrain.set_block(airlock, B.AIRLOCK)
+	_expect(game._habitat_networks.members(annex).size() == 2, "Restoring both airlock panels reconnects the circuit")
 
 
 func _place_habitat_device(game: MomoyoGame, cell: Vector2i, material: int) -> bool:
@@ -1005,6 +1108,15 @@ func _check_power_migration(save: ExpeditionSave, state: Dictionary) -> void:
 	_expect(room.get("time") == 120.0 and room.get("air") == 72.0 and room.get("charge") == HabitatRoom.RECYCLER_BUFFER
 			and room.get("fuel_seconds") == 0.0 and migrated.get("vitals", {}).get("vacuum_recovery") == 2.5,
 			"Existing habitats retain air and get a fresh reserve without changing the explorer's vacuum recovery")
+	if not room.is_empty():
+		room.charge = 12.0
+		migrated.format = ExpeditionSave.POWER_FORMAT
+		migrated.erase("sandbox_enabled")
+		_expect(save.write(migrated) == OK, "An existing powered habitat can be written without the sandbox flag")
+		var powered := save.read()
+		var existing: Dictionary = powered.get("habitats", {}).get(zone, {}).get(TEST_RECYCLER, {})
+		_expect(powered.get("sandbox_enabled") == false and existing.get("charge") == 12.0,
+				"Power-era saves preserve their battery state and start with sandbox mode disabled")
 
 
 func _check_journal() -> void:

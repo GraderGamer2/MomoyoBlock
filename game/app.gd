@@ -1,7 +1,7 @@
 class_name MomoyoApp
 extends Node
 
-enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD, WORKSHOP, INVENTORY }
+enum Screen { TITLE, EXPLORING, PAUSED, SETTINGS, STAR_CHART, LOAD, WORKSHOP, INVENTORY, SANDBOX }
 
 const EXPEDITION := preload("res://game/main.tscn")
 
@@ -10,6 +10,7 @@ var game: MomoyoGame
 var preferences := GamePreferences.new()
 
 var _settings_return := Screen.TITLE
+var _sandbox_return := Screen.EXPLORING
 var _quit_confirmed := false
 var _inventory_slots: Array[InventorySlot] = []
 var _moving_slot := -1
@@ -47,6 +48,13 @@ func _fit_window_content() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("sandbox_materials") and screen in [Screen.EXPLORING, Screen.SANDBOX]:
+		get_viewport().set_input_as_handled()
+		if screen == Screen.EXPLORING:
+			show_sandbox(Screen.EXPLORING)
+		else:
+			_leave_sandbox()
+		return
 	if event.is_action_pressed("inventory") and screen in [Screen.EXPLORING, Screen.INVENTORY]:
 		get_viewport().set_input_as_handled()
 		if screen == Screen.EXPLORING:
@@ -66,6 +74,8 @@ func _input(event: InputEvent) -> void:
 			_leave_settings()
 		Screen.LOAD:
 			show_title()
+		Screen.SANDBOX:
+			_leave_sandbox()
 
 
 func _notification(what: int) -> void:
@@ -147,10 +157,60 @@ func show_pause() -> void:
 	body.add_child(resume)
 	if game.can_choose_planet():
 		body.add_child(_ui.button("Star chart", show_chart))
+	body.add_child(_ui.button("Sandbox materials", show_sandbox.bind(Screen.PAUSED)))
 	body.add_child(_ui.button("Settings", show_settings.bind(Screen.PAUSED)))
 	body.add_child(_ui.button("Save and return to menu", return_to_menu))
 	body.add_child(_ui.button("Save and quit", request_quit))
 	_ui.finish_panel(resume)
+
+
+func show_sandbox(previous: Screen) -> void:
+	_sandbox_return = previous
+	screen = Screen.SANDBOX
+	get_tree().paused = true
+	var enabled := game.sandbox_enabled
+	var subtitle := "Enable unlimited building materials for this expedition."
+	if enabled:
+		subtitle = "Select any building block for unlimited placement."
+	var body := _ui.open_panel("Sandbox materials", subtitle)
+	var toggle := _ui.button("Disable sandbox materials" if enabled else "Enable sandbox materials", _toggle_sandbox, not enabled)
+	toggle.name = "SandboxToggle"
+	body.add_child(toggle)
+	var focus: Control = toggle
+	if enabled:
+		var grid := GridContainer.new()
+		grid.columns = 4
+		grid.add_theme_constant_override("h_separation", 6)
+		grid.add_theme_constant_override("v_separation", 6)
+		body.add_child(grid)
+		for material in range(1, BlockWorld.BLOCK_NAMES.size()):
+			if not BlockWorld.is_placeable(material):
+				continue
+			var button := _ui.button(ExpeditionInventory.item_name(material), _select_sandbox_block.bind(material))
+			button.name = "SandboxBlock%d" % material
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			if grid.get_child_count() == 0:
+				focus = button
+			grid.add_child(button)
+	body.add_child(_ui.button("Back", _leave_sandbox))
+	_ui.finish_panel(focus)
+
+
+func _toggle_sandbox() -> void:
+	game.set_sandbox(not game.sandbox_enabled)
+	show_sandbox(_sandbox_return)
+
+
+func _leave_sandbox() -> void:
+	if _sandbox_return == Screen.PAUSED:
+		show_pause()
+	else:
+		resume_expedition()
+
+
+func _select_sandbox_block(material: int) -> void:
+	if game.select_sandbox_material(material):
+		resume_expedition()
 
 
 func return_to_menu() -> void:
@@ -265,10 +325,13 @@ func show_workshop() -> void:
 		var tabs := _workshop_categories()
 		body.add_child(tabs)
 		focus = tabs.get_tab_bar()
-	var supplies := PackedStringArray()
-	for item: int in BlockWorld.BUILD_MATERIALS:
-		supplies.append("%d %s" % [game.inventory.count(item, game.survival.suit_equipped), ExpeditionInventory.item_name(item).to_lower()])
-	body.add_child(_ui.label("Carried  " + "  ·  ".join(supplies), 13, ShellUI.MINT))
+	if game.sandbox_enabled:
+		body.add_child(_ui.label("Unlimited crafting materials", 13, ShellUI.MINT))
+	else:
+		var supplies := PackedStringArray()
+		for item: int in BlockWorld.BUILD_MATERIALS:
+			supplies.append("%d %s" % [game.inventory.count(item, game.survival.suit_equipped), ExpeditionInventory.item_name(item).to_lower()])
+		body.add_child(_ui.label("Carried  " + "  ·  ".join(supplies), 13, ShellUI.MINT))
 	var back := _ui.button("Back to expedition", resume_expedition, true)
 	body.add_child(back)
 	_ui.finish_panel(focus if focus != null else back)
@@ -309,11 +372,11 @@ func _recipe_row(recipe: int) -> HBoxContainer:
 		action = "Repair"
 	elif data.category == ExpeditionKit.Category.TOOLS:
 		action = "Upgrade"
-	var entry := "%s  ·  %s" % [action, ExpeditionKit.cost_text(recipe)]
+	var entry := action if game.sandbox_enabled else "%s  ·  %s" % [action, ExpeditionKit.cost_text(recipe)]
 	if recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
 		entry = "Equipped"
 	var craft_button := _ui.button(entry, _craft.bind(recipe))
-	craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival)
+	craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival, game.sandbox_enabled)
 	row.add_child(craft_button)
 	return row
 

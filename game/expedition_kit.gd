@@ -116,12 +116,12 @@ func shows_recipe(recipe: int, in_field: bool) -> bool:
 	return RECIPES[recipe].get("requires_level", pulse_level) == pulse_level
 
 
-func available(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState) -> bool:
-	return _exchange(recipe, inventory, vitals, false)
+func available(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState, unlimited := false) -> bool:
+	return _exchange(recipe, inventory, vitals, false, unlimited)
 
 
-func craft(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState) -> bool:
-	if not _exchange(recipe, inventory, vitals, true):
+func craft(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState, unlimited := false) -> bool:
+	if not _exchange(recipe, inventory, vitals, true, unlimited):
 		return false
 	match recipe:
 		Recipe.REPAIR:
@@ -133,13 +133,14 @@ func craft(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState) -
 	return true
 
 
-func _exchange(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState, commit: bool) -> bool:
+func _exchange(recipe: int, inventory: ExpeditionInventory, vitals: SurvivalState, commit: bool, unlimited: bool) -> bool:
 	if recipe < 0 or recipe >= RECIPES.size() or not shows_recipe(recipe, false):
 		return false
 	if (recipe == Recipe.REPAIR and vitals.suit_integrity >= SurvivalState.MAX_LEVEL) or (recipe == Recipe.LINER and liner):
 		return false
 	var data: Dictionary = RECIPES[recipe]
-	return inventory.exchange(data.cost, data.get("item", B.EMPTY), data.get("count", 0), vitals.suit_equipped, commit)
+	var cost: Dictionary = {} if unlimited else data.cost
+	return inventory.exchange(cost, data.get("item", B.EMPTY), data.get("count", 0), vitals.suit_equipped, commit)
 
 
 func snapshot() -> Dictionary:

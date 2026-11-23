@@ -29,11 +29,12 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | F | Collect the nearest food or water source with the pulse tool |
 | R / T | Eat a ration or drink water |
 | C | Open field crafting or the nearby workbench |
+| B | Open sandbox materials |
 | U | Equip or remove the suit |
 | O | Use a spare air canister |
 | E at a beacon | Travel between the current planet and Relay Nine |
 | E beside an airlock or recycler | Cycle the airlock or commission life support |
-| Right click a fuel generator | Load a fuel cell from accessible inventory |
+| Right click a fuel generator | Commission a valid habitat and load a fuel cell |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
@@ -59,9 +60,15 @@ In orbit, a full vacuum reserve gives you **8 seconds** without breathable air b
 1. At a workbench, open **Life support** and craft an **oxygen recycler**, **fuel generator**, and **fuel cells**. Craft **airlock panels** for an entrance and **habitat batteries** for extended backup power.
 2. Build an airtight rectangle with alloy or pressure glass. The interior can be **2–16 tiles wide** and **2–10 tiles high**. Fit the recycler, generator, and any batteries into the same floor, with the recycler facing the room.
 3. Stack two airlock panels in a side wall. Leave two tiles of clearance on both sides and press **E** beside the airlock to enter.
-4. Press **E** near the recycler to commission the room. Right-click the generator within reach to load one fuel cell. The HUD tracks breathable air, fuel, and battery reserve.
+4. Right-click the generator within reach to commission the room and load one fuel cell. **E** near a recycler surveys the shelter without using fuel. Setup feedback identifies incomplete walls, roofs, floors, or missing recyclers. The HUD tracks breathable air, fuel, and battery reserve.
 
-A fuel cell runs the generator for **90 seconds**. While running, it powers the recycler and charges the reserve. Each battery adds **120 seconds** of storage to the recycler's **30-second** buffer. A breach vents the room and stops the recycler, while the generator can keep charging the batteries. Repair the seal to resume filling. If the reserve runs out, the room gradually loses breathable air. Fuel and charge advance with expedition time, including time spent away from the habitat. Existing shelters keep their saved air and get a charged starting buffer.
+For a linked habitat, build adjoining rectangles with a common side wall and stack two airlock panels in that wall. Each room needs a sealed floor, roof, and side walls. Press **E** near a recycler to link newly built rooms. One recycler can supply the intact rooms, and generators and batteries in any connected floor share power across the network. A breach vents the affected room. Repair the shell to resume filling it.
+
+A fuel cell runs the generator for **90 seconds**. Each battery adds **120 seconds** of storage to the recycler's **30-second** buffer. If the reserve runs out, air gradually declines. Fuel and charge advance with expedition time, including time spent away from the habitat.
+
+## Sandbox materials
+
+Press **B** or choose **Sandbox materials** from the pause menu, then enable the mode for the current expedition. Pick a block from the palette and right-click to place it repeatedly. Use **1–9** or the mouse wheel to return to the hotbar. Crafting ingredients, generator fuel, and supplies used with **R**, **T**, and **O** are unlimited while the mode is enabled. Normal build reach and survival conditions still apply. Save the expedition to keep the setting. The same menu turns it off.
 
 ## Jetpack and exploration
 
