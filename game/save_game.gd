@@ -10,7 +10,8 @@ const TEMPERATURE_FORMAT := 5
 const FIELD_EQUIPMENT_FORMAT := 6
 const SLOTTED_FORMAT := 7
 const HABITAT_FORMAT := 8
-const FORMAT := 9
+const VACUUM_RECOVERY_FORMAT := 9
+const FORMAT := 10
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -99,10 +100,14 @@ func read() -> Dictionary:
 		if vitals is Dictionary:
 			vitals["vacuum_exposure"] = 0.0
 		state.habitats = {}
-	if loaded_format < FORMAT:
+	if loaded_format < VACUUM_RECOVERY_FORMAT:
 		var vitals: Variant = state.get("vitals")
 		if vitals is Dictionary:
 			vitals["vacuum_recovery"] = 0.0
+	if loaded_format < FORMAT:
+		if not _upgrade_habitat_power(state):
+			read_error = ERR_FILE_CORRUPT
+			return {}
 		state.format = FORMAT
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
@@ -145,6 +150,20 @@ func _upgrade_equipment(state: Dictionary) -> bool:
 	vitals["jetpack_fuel"] = SurvivalState.JETPACK_CAPACITY
 	vitals["jetpack_cooldown"] = 0.0
 	state.cabin_pressure = float(SurvivalState.CABIN_PRESSURE)
+	return true
+
+
+static func _upgrade_habitat_power(state: Dictionary) -> bool:
+	var vitals: Variant = state.get("vitals")
+	if not SurvivalState.valid_snapshot(vitals) or not _valid_habitats(state.get("habitats"), vitals.elapsed, false):
+		return false
+	for rooms: Dictionary in state.habitats.values():
+		for room: Dictionary in rooms.values():
+			room.charge = HabitatRoom.RECYCLER_BUFFER
+			room.fuel_seconds = 0.0
+			room.generator = null
+			# Start the retrofit reserve at the saved expedition time.
+			room.time = vitals.elapsed
 	return true
 
 
@@ -277,7 +296,7 @@ static func _state_data_valid(state: Dictionary) -> bool:
 	return true
 
 
-static func _valid_habitats(data: Variant, elapsed: float) -> bool:
+static func _valid_habitats(data: Variant, elapsed: float, includes_power := true) -> bool:
 	if not data is Dictionary:
 		return false
 	for zone: Variant in data:
@@ -289,7 +308,7 @@ static func _valid_habitats(data: Variant, elapsed: float) -> bool:
 		if not rooms is Dictionary:
 			return false
 		for recycler: Variant in rooms:
-			if not recycler is Vector2i or not HabitatRoom.valid_snapshot(rooms[recycler], recycler, elapsed):
+			if not recycler is Vector2i or not HabitatRoom.valid_snapshot(rooms[recycler], recycler, elapsed, includes_power):
 				return false
 	return true
 

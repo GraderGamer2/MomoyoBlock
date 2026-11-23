@@ -156,11 +156,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("mine"):
 		begin_mining(terrain.world_cell(get_global_mouse_position()))
 	elif event.is_action_pressed("place"):
-		var item := inventory.item_at(selected)
-		if item >= ExpeditionInventory.RATION:
-			consume(item)
-		else:
-			place(terrain.world_cell(get_global_mouse_position()))
+		use_or_place(terrain.world_cell(get_global_mouse_position()))
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9:
 			selected = event.physical_keycode - KEY_1
@@ -253,6 +249,44 @@ func _clear_pulse() -> void:
 	if _pulse_left > 0.0:
 		_pulse.hide()
 		_pulse_left = 0.0
+
+
+func use_or_place(cell: Vector2i) -> bool:
+	if _in_transit:
+		return false
+	if terrain.block_at(cell) == BlockWorld.Block.GENERATOR:
+		return _refuel_generator(cell)
+	var item := inventory.item_at(selected)
+	if item == ExpeditionInventory.FUEL_CELL:
+		_hud.show_status("Right-click a fuel generator to load a cell.", false)
+		return false
+	return consume(item) if item >= ExpeditionInventory.RATION else place(cell)
+
+
+func _refuel_generator(cell: Vector2i) -> bool:
+	if not _within_reach(cell):
+		_feedback_on_distant_action(cell)
+		return false
+	if not terrain.pulse_path_clear(explorer.position, cell):
+		_hud.show_status("The generator is blocked.", false)
+		return false
+	for room: HabitatRoom in _habitats.values():
+		if not room.floor_contains(cell):
+			continue
+		room.advance_to(survival.elapsed)
+		if room.fuel_seconds > 0.0:
+			_hud.show_status("The habitat generator is still running.", false)
+			return false
+		if not inventory.take(ExpeditionInventory.FUEL_CELL, 1, survival.suit_equipped):
+			_hud.show_status("Craft a fuel cell at a workbench to refuel.", false)
+			return false
+		room.refuel(cell)
+		_hud.show_status("Generator running.")
+		_show_inventory()
+		_update_survival_display()
+		return true
+	_hud.show_status("Fit the generator in the floor of a commissioned habitat.", false)
+	return false
 
 
 func place(cell: Vector2i) -> bool:
@@ -429,7 +463,7 @@ func _commission_habitat(recycler: Vector2i) -> bool:
 		_hud.show_status("Life support needs a sealed room with the recycler in its floor.", false)
 		return false
 	var retired: Array[Vector2i] = []
-	var retained_air := 0.0
+	var room: HabitatRoom = _habitats.get(recycler)
 	for device in _habitats:
 		var other: HabitatRoom = _habitats[device]
 		if device == recycler or not area.intersects(other.bounds):
@@ -437,20 +471,20 @@ func _commission_habitat(recycler: Vector2i) -> bool:
 		if terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
 			_hud.show_status("That room already has a commissioned recycler.", false)
 			return false
-		if area == other.bounds:
-			other.advance_to(survival.elapsed)
-			retained_air = other.air
+		if room == null and area == other.bounds:
+			room = other
 		retired.append(device)
 	for device in retired:
 		_habitats.erase(device)
-	var room: HabitatRoom = _habitats.get(recycler)
-	if room == null or room.bounds != area:
+	if room == null:
 		room = HabitatRoom.new(area, survival.elapsed)
-		room.air = retained_air
-		_habitats[recycler] = room
-	room.advance_to(survival.elapsed)
+	else:
+		room.advance_to(survival.elapsed)
+		room.air *= minf(1.0, float(room.bounds.get_area()) / area.get_area())
+		room.bounds = area
+	_habitats[recycler] = room
 	room.sync(terrain.world, recycler)
-	_hud.show_status("Life support online. Habitat air %.0f%%." % (room.air * 100.0 / SurvivalState.CABIN_PRESSURE))
+	_hud.show_status("Life support online." if room.powered() else "Habitat commissioned. Right-click its generator to load fuel.", room.powered())
 	_update_survival_display()
 	return true
 
@@ -587,7 +621,7 @@ func _store_habitats() -> void:
 	for device in _habitats:
 		var room: HabitatRoom = _habitats[device]
 		room.advance_to(survival.elapsed)
-		if room.air > 0.0 or terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
+		if room.has_reserves() or terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
 			states[device] = room.snapshot()
 	if states.is_empty():
 		_habitat_saves.erase(_habitat_zone)
@@ -670,12 +704,15 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var environment := "Cabin %.0f kPa" % cabin.pressure if inside else "Vacuum · Cold exposure"
 	if on_surface:
 		environment = "Outside  %d kPa · %d °C" % [surface.planet.pressure_kpa, roundi(outside_temperature)]
+	var habitat_power := ""
 	if habitat != null and not at_beacon:
 		environment = "Habitat air %.0f%% · %.0f kPa" % [habitat.air * 100.0 / SurvivalState.CABIN_PRESSURE, pressure]
+		habitat_power = habitat.power_reading()
 	_hud.show_survival(survival, inventory, air, weather_text if on_surface else "Orbit", environment,
 			(on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT) or
 			(inside and not cabin.breaches.is_empty()),
 			SurvivalState.body_temperature_target(temperature))
+	_hud.show_habitat_power(habitat_power)
 	_hud.show_vacuum_recovery(survival, breathing)
 
 
@@ -714,7 +751,7 @@ func _on_block_changed(cell: Vector2i) -> void:
 			continue
 		room.advance_to(survival.elapsed)
 		room.sync(terrain.world, device)
-		if room.air == 0.0 and terrain.world.material_at(device) != BlockWorld.Block.RECYCLER:
+		if not room.has_reserves() and terrain.world.material_at(device) != BlockWorld.Block.RECYCLER:
 			_habitats.erase(device)
 		habitat_changed = true
 	if habitat_changed:
@@ -831,7 +868,7 @@ func _update_travel() -> void:
 		if _airlock_exit() != null:
 			interaction = "E  Cycle airlock"
 		elif terrain.has_block_near(explorer.position, BlockWorld.Block.RECYCLER, WORKBENCH_REACH):
-			interaction = "E  Activate life support"
+			interaction = "E  Commission life support"
 	_hud.show_travel(region, _near_beacon, surface.planet.title(), direction, interaction)
 	_hud.show_workshop(workbench_name())
 

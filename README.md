@@ -32,14 +32,15 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | U | Equip or remove the suit |
 | O | Use a spare air canister |
 | E at a beacon | Travel between the current planet and Relay Nine |
-| E beside an airlock or recycler | Cycle the airlock or activate life support |
+| E beside an airlock or recycler | Cycle the airlock or commission life support |
+| Right click a fuel generator | Load a fuel cell from accessible inventory |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
 The starter pulse tool mines and collects within **2.1 tiles**. Keep the pointer on a block while holding left click to mine it. Harder blocks take longer, and solid tiles stop the pulse. The tool has unlimited durability. Its three upgrades increase hard-block mining power and extend range to **2.65**, **3.1**, and **3.6 tiles**. Placement has a two-tile reach. Mined sand has its own stack and can be placed from the hotbar.
 
-Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to browse **Materials**, **Construction**, **Survival**, and **Tools**. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
+Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to browse **Materials**, **Construction**, **Survival**, **Tools**, and **Life support**. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
 
 The explorer carries **9 hotbar slots and 5 suit storage slots**. Open the inventory with **Tab** and drag a stack or choose a source and destination. Suit storage is accessible while wearing the suit. New stacks hold up to 64 items. Larger stacks carried over from older saves can be used down over time.
 
@@ -55,12 +56,12 @@ In orbit, a full vacuum reserve gives you **8 seconds** without breathable air b
 
 ## Build an oxygen shelter
 
-1. Craft an **oxygen recycler** and **airlock panels** at a workbench.
-2. Build an airtight rectangle with a floor, roof, and side walls made of alloy or pressure glass. The interior can be **2–12 tiles wide** and **2–8 tiles high**.
-3. Put the recycler in the floor, with its top facing the room. Stack two airlock panels in a side wall and leave two tiles of clearance on both sides of the doorway.
-4. Press **E** beside the airlock to enter, then **E** near the recycler to start filling the room. The HUD shows habitat air as it fills. Repair gaps in the shell to restore the seal.
+1. At a workbench, open **Life support** and craft an **oxygen recycler**, **fuel generator**, and **fuel cells**. Craft **airlock panels** for an entrance and **habitat batteries** for extended backup power.
+2. Build an airtight rectangle with alloy or pressure glass. The interior can be **2–16 tiles wide** and **2–10 tiles high**. Fit the recycler, generator, and any batteries into the same floor, with the recycler facing the room.
+3. Stack two airlock panels in a side wall. Leave two tiles of clearance on both sides and press **E** beside the airlock to enter.
+4. Press **E** near the recycler to commission the room. Right-click the generator within reach to load one fuel cell. The HUD tracks breathable air, fuel, and battery reserve.
 
-The first recycler has integrated power and serves one rectangular room. Habitats retain their air level across saves and trips.
+A fuel cell runs the generator for **90 seconds**. While running, it powers the recycler and charges the reserve. Each battery adds **120 seconds** of storage to the recycler's **30-second** buffer. A breach vents the room and stops the recycler, while the generator can keep charging the batteries. Repair the seal to resume filling. If the reserve runs out, the room gradually loses breathable air. Fuel and charge advance with expedition time, including time spent away from the habitat. Existing shelters keep their saved air and get a charged starting buffer.
 
 ## Jetpack and exploration
 

@@ -334,5 +334,15 @@ func _paint_atlas() -> void:
 			image.fill_rect(Rect2i(x + 5, 4, size - 10, 3), Color("#a3e5bd"))
 			for stripe in 3:
 				image.fill_rect(Rect2i(x + 6, 10 + stripe * 3, size - 12, 1), color.lightened(0.24))
+		elif block == BlockWorld.Block.GENERATOR:
+			image.fill_rect(Rect2i(x + 3, 4, size - 6, size - 8), color.darkened(0.44))
+			image.fill_rect(Rect2i(x + 5, 7, 5, 6), Color("#ffc76f"))
+			for vent in 3:
+				image.fill_rect(Rect2i(x + 12, 7 + vent * 4, 6, 2), color.lightened(0.25))
+		elif block == BlockWorld.Block.BATTERY:
+			image.fill_rect(Rect2i(x + 4, 4, size - 8, size - 8), color.darkened(0.38))
+			for bar in 3:
+				image.fill_rect(Rect2i(x + 7 + bar * 4, 10, 2, 7), Color("#bbbdfa"))
+			image.fill_rect(Rect2i(x + 9, 5, 6, 2), Color("#d9dbff"))
 
 	_atlas.texture = ImageTexture.create_from_image(image)

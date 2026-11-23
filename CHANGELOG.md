@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 · 2026-11-23
+
+- Power habitat recyclers with craftable fuel generators and floor batteries. One fuel cell runs a generator for 90 seconds, and excess output charges the batteries. Habitats slowly lose air when power runs out.
+- Add a Life support workbench tab and show remaining fuel and reserve power on the habitat HUD.
+- Expand rectangular habitat interiors to 16 × 10 tiles. The largest rooms take longer to fill.
+- Persist fuel and charge across trips and saves. Existing habitats keep their saved air and receive 30 seconds of reserve power.
+
 ## 0.8.1 · 2026-11-23
 
 - Scale the world, HUD, and menus up as the window grows while rendering at the window's native resolution. Keep the title bar, window buttons, and resize grip at their previous size.

@@ -8,6 +8,7 @@ const STACK_LIMIT := 64
 const RATION := 64
 const WATER := 65
 const CANISTER := 66
+const FUEL_CELL := 67
 
 # Each saved slot stores its item ID followed by its stack size.
 var _slots := PackedInt32Array()
@@ -169,7 +170,7 @@ static func valid_snapshot(data: Variant) -> bool:
 
 
 static func is_item(item: int) -> bool:
-	return BlockWorld.is_placeable(item) or item in [RATION, WATER, CANISTER]
+	return BlockWorld.is_placeable(item) or item in [RATION, WATER, CANISTER, FUEL_CELL]
 
 
 static func item_name(item: int) -> String:
@@ -180,6 +181,8 @@ static func item_name(item: int) -> String:
 			return "Water"
 		CANISTER:
 			return "Air canister"
+		FUEL_CELL:
+			return "Fuel cell"
 		_:
 			return BlockWorld.BLOCK_NAMES[item]
 
@@ -192,6 +195,8 @@ static func item_color(item: int) -> Color:
 			return Color("#67cde8")
 		CANISTER:
 			return Color("#8eebbe")
+		FUEL_CELL:
+			return Color("#e8ae60")
 		_:
 			return BlockWorld.TILE_COLORS[item]
 

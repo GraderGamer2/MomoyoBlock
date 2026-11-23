@@ -14,6 +14,7 @@ var _status: Label
 var _travel: Label
 var _environment: Label
 var _atmosphere: Label
+var _habitat_power: Label
 var _vacuum_reserve: Label
 var _workshop: Label
 var _mining: Label
@@ -80,6 +81,10 @@ func _ready() -> void:
 	_atmosphere = _label("", 12, MUTED)
 	_atmosphere.name = "LocalAtmosphere"
 	readings.add_child(_atmosphere)
+	_habitat_power = _label("", 12, GREEN)
+	_habitat_power.name = "HabitatPower"
+	_habitat_power.hide()
+	readings.add_child(_habitat_power)
 	_vacuum_reserve = _label("", 12, GREEN)
 	_vacuum_reserve.name = "VacuumReserve"
 	_vacuum_reserve.hide()
@@ -337,6 +342,12 @@ func show_vacuum_recovery(state: SurvivalState, breathing: bool) -> void:
 		var reading := "Vacuum reserve %.1f/%.0f s  ·  +1 in %d s" % [reserve, SurvivalState.VACUUM_GRACE, wait]
 		if _vacuum_reserve.text != reading:
 			_vacuum_reserve.text = reading
+
+
+func show_habitat_power(reading: String) -> void:
+	_habitat_power.visible = not reading.is_empty()
+	if _habitat_power.text != reading:
+		_habitat_power.text = reading
 
 
 func _show_body_temperature(value: float, target: float) -> void:

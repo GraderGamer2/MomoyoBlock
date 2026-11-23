@@ -2,10 +2,13 @@ class_name ExpeditionKit
 extends RefCounted
 
 const B := BlockWorld.Block
-enum Recipe { WORKBENCH, SMELT, REPAIR, PULSE_1, PULSE_2, PULSE_3, CANISTER, LINER, GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER }
-enum Category { MATERIALS, CONSTRUCTION, SURVIVAL, TOOLS }
+enum Recipe {
+	WORKBENCH, SMELT, REPAIR, PULSE_1, PULSE_2, PULSE_3, CANISTER, LINER, GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER,
+	GENERATOR, BATTERY, FUEL_CELL,
+}
+enum Category { MATERIALS, CONSTRUCTION, SURVIVAL, TOOLS, LIFE_SUPPORT }
 
-const CATEGORY_NAMES := ["Materials", "Construction", "Survival", "Tools"]
+const CATEGORY_NAMES := ["Materials", "Construction", "Survival", "Tools", "Life support"]
 const CANISTER_REFILL := 45.0
 const ALLOY_YIELD := 3
 const MAX_PULSE_LEVEL := 3
@@ -68,14 +71,29 @@ const RECIPES := [
 		"cost": {B.SOIL: 2, B.ALLOY: 2}, "item": B.INSULATION, "count": 4,
 	},
 	{
-		"category": Category.CONSTRUCTION,
+		"category": Category.LIFE_SUPPORT,
 		"name": "Airlock panels ×2", "benefit": "Stack two panels for a sealed entrance.",
 		"cost": {B.ALLOY: 4, B.ORE: 1}, "item": B.AIRLOCK, "count": 2,
 	},
 	{
-		"category": Category.CONSTRUCTION,
-		"name": "Oxygen recycler", "benefit": "Fills one airtight room from the floor.",
+		"category": Category.LIFE_SUPPORT,
+		"name": "Oxygen recycler", "benefit": "Pressurizes one sealed room when powered.",
 		"cost": {B.ALLOY: 4, B.ORE: 2}, "item": B.RECYCLER, "count": 1,
+	},
+	{
+		"category": Category.LIFE_SUPPORT,
+		"name": "Fuel generator", "benefit": "Fit in the same floor as the recycler.",
+		"cost": {B.ALLOY: 5, B.ORE: 2}, "item": B.GENERATOR, "count": 1,
+	},
+	{
+		"category": Category.LIFE_SUPPORT,
+		"name": "Habitat battery", "benefit": "Stores 120 seconds of reserve power.",
+		"cost": {B.ALLOY: 3, B.ORE: 1}, "item": B.BATTERY, "count": 1,
+	},
+	{
+		"category": Category.LIFE_SUPPORT,
+		"name": "Fuel cells ×2", "benefit": "Right-click a generator to load one.",
+		"cost": {B.ALLOY: 1, B.ORE: 2}, "item": ExpeditionInventory.FUEL_CELL, "count": 2,
 	},
 ]
 

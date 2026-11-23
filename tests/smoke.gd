@@ -5,6 +5,8 @@ const APP := preload("res://game/app.tscn")
 const B := BlockWorld.Block
 const I := preload("res://game/expedition_inventory.gd")
 const TEST_RECYCLER := Vector2i(8, BlockWorld.PAD_ROW)
+const TEST_GENERATOR := Vector2i(9, BlockWorld.PAD_ROW)
+const TEST_BATTERY := Vector2i(7, BlockWorld.PAD_ROW)
 const TEST_ROOF := Vector2i(8, BlockWorld.PAD_ROW - 4)
 const TEST_SAND_PLACEMENT := Vector2i(3, BlockWorld.PAD_ROW - 1)
 
@@ -35,6 +37,7 @@ func _run() -> void:
 	_check_inventory()
 	_check_gravity()
 	_check_survival_model()
+	_check_habitat_power()
 	_check_vacuum_grace()
 	_check_body_temperature()
 	_check_suit()
@@ -171,7 +174,7 @@ func _run() -> void:
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.EMPTY, "Edits belong to the planet where they were made")
 	var foreign_block := Vector2i(1, BlockWorld.PAD_ROW - 2)
 	_expect(game.place(foreign_block), "You can build on another planet")
-	var saved_air := _check_habitat(game)
+	var saved_room := _check_habitat(game)
 	_expect(game.save_expedition(), "The expedition saves a destination and its changes")
 	game.queue_free()
 	await get_tree().process_frame
@@ -182,8 +185,12 @@ func _run() -> void:
 			"Reopening restores a generated destination and its edits")
 	var restored_habitat: HabitatRoom = game._habitats.get(TEST_RECYCLER)
 	if restored_habitat != null:
-		_expect(is_equal_approx(restored_habitat.air, saved_air) and game.breathable_here(),
+		_expect(is_equal_approx(restored_habitat.air, saved_room.get("air", -1.0)) and game.breathable_here(),
 				"A leaking habitat reloads with its remaining breathable air")
+		_expect(is_equal_approx(restored_habitat.fuel_seconds, saved_room.get("fuel_seconds", -1.0))
+				and is_equal_approx(restored_habitat.charge, saved_room.get("charge", -1.0))
+				and game.terrain.block_at(TEST_GENERATOR) == B.GENERATOR and game.terrain.block_at(TEST_BATTERY) == B.BATTERY,
+				"Reloading keeps installed power equipment, fuel, and battery charge")
 		game._update_survival_display(14.0)
 		_expect(not game.breathable_here(), "A habitat eventually loses enough air to require a suit")
 		game.terrain.set_block(TEST_ROOF, B.GLASS)
@@ -267,8 +274,10 @@ func _check_menu() -> void:
 	app.game.terrain.set_block(bench, B.WORKBENCH)
 	app.show_workshop()
 	var tabs := app.find_child("RecipeCategories", true, false) as TabContainer
-	_expect(tabs != null and tabs.get_tab_count() == ExpeditionKit.CATEGORY_NAMES.size(), "The workbench has four recipe categories")
+	_expect(tabs != null and tabs.get_tab_count() == ExpeditionKit.CATEGORY_NAMES.size(), "The workbench has five recipe categories")
 	if tabs != null:
+		tabs.current_tab = ExpeditionKit.Category.LIFE_SUPPORT
+		_expect(tabs.get_current_tab_control().get_child_count() == 5, "Life support groups airlocks, recyclers, and power equipment")
 		tabs.current_tab = ExpeditionKit.Category.TOOLS
 		_expect(tabs.get_current_tab_control().name == "Tools", "Choosing Tools opens the pulse upgrades")
 		app._craft(ExpeditionKit.Recipe.PULSE_1)
@@ -507,7 +516,47 @@ func _check_vacuum_grace() -> void:
 			"Only the oxygenated part of a suit's last breath recharges vacuum grace")
 
 
-func _check_habitat(game: MomoyoGame) -> float:
+func _check_habitat_power() -> void:
+	var world := BlockWorld.new(BlockWorld.Region.STATION)
+	var area := Rect2i(48, -16, 16, 10)
+	var recycler := Vector2i(area.position.x + 1, area.end.y)
+	var generator := recycler + Vector2i.RIGHT
+	var battery := generator + Vector2i.RIGHT
+	for x in range(area.position.x, area.end.x):
+		world.record_edit(Vector2i(x, area.position.y - 1), B.GLASS)
+		world.record_edit(Vector2i(x, area.end.y), B.ALLOY)
+	for y in range(area.position.y, area.end.y):
+		world.record_edit(Vector2i(area.position.x - 1, y), B.ALLOY)
+		world.record_edit(Vector2i(area.end.x, y), B.ALLOY)
+	world.record_edit(recycler, B.RECYCLER)
+	world.record_edit(generator, B.GENERATOR)
+	world.record_edit(battery, B.BATTERY)
+	_expect(HabitatRoom.survey(world, recycler) == area, "A sealed room can be sixteen tiles wide and ten tiles high")
+	var room := HabitatRoom.new(area, 0.0)
+	room.sync(world, recycler)
+	room.refuel(generator)
+	room.advance_to(10.0)
+	_expect(is_equal_approx(room.air, 48.0) and room.charge == 10.0 and not room.breathable(),
+			"A large habitat fills more slowly and charges its battery during generation")
+	room.advance_to(95.0)
+	_expect(room.fuel_seconds == 0.0 and room.charge == 85.0 and room.air == SurvivalState.CABIN_PRESSURE,
+			"The battery seamlessly takes over after the fuel cell runs out")
+	var away := HabitatRoom.from_snapshot(room.snapshot(), world, recycler, 240.0)
+	_expect(away.charge == 0.0 and is_equal_approx(away.air, 56.0) and not away.breathable(),
+			"An absent expedition uses the remaining battery and only then loses breathable air")
+	room.refuel(generator)
+	room.advance_to(105.0)
+	world.record_edit(generator, B.EMPTY)
+	room.sync(world, recycler)
+	world.record_edit(generator, B.GENERATOR)
+	room.sync(world, recycler)
+	_expect(room.fuel_seconds == 0.0 and room.charge == 95.0, "Mining a running generator discards its fuel but retains the battery reserve")
+	world.record_edit(battery, B.GLASS)
+	room.sync(world, recycler)
+	_expect(room.charge == HabitatRoom.RECYCLER_BUFFER, "Removing a battery drops charge above the remaining capacity")
+
+
+func _check_habitat(game: MomoyoGame) -> Dictionary:
 	var floor_y := BlockWorld.PAD_ROW
 	for x in range(6, 10):
 		game.terrain.set_block(Vector2i(x, floor_y), B.ALLOY)
@@ -516,12 +565,34 @@ func _check_habitat(game: MomoyoGame) -> float:
 	for y in range(floor_y - 3, floor_y):
 		game.terrain.set_block(Vector2i(5, y), B.AIRLOCK if y >= floor_y - 2 else B.ALLOY)
 		game.terrain.set_block(Vector2i(10, y), B.ALLOY)
-	game.terrain.set_block(TEST_RECYCLER, B.RECYCLER)
-	game.explorer.position = game.terrain.scene_point(TEST_RECYCLER + Vector2i.UP, ActiveTerrain.CELL_CENTER)
+	game.explorer.position = game.terrain.scene_point(TEST_RECYCLER, Vector2(0.5, -15.0 / BlockWorld.TILE_SIZE))
 	game.explorer.velocity = Vector2.ZERO
+	var bench := Vector2i(7, floor_y - 2)
+	game.terrain.set_block(bench, B.WORKBENCH)
+	game.inventory.add(B.ALLOY, 20)
+	game.inventory.add(B.ORE, 9)
+	_expect(game.craft(ExpeditionKit.Recipe.RECYCLER) and game.craft(ExpeditionKit.Recipe.GENERATOR)
+			and game.craft(ExpeditionKit.Recipe.BATTERY) and game.craft(ExpeditionKit.Recipe.FUEL_CELL),
+			"Workbenches craft a recycler, generator, battery, and fuel cells")
+	game.terrain.set_block(bench, B.EMPTY)
+	var equipment := {TEST_RECYCLER: B.RECYCLER, TEST_GENERATOR: B.GENERATOR, TEST_BATTERY: B.BATTERY}
+	for cell: Vector2i in equipment:
+		game.terrain.set_block(cell, B.EMPTY)
+		_expect(_place_habitat_device(game, cell, equipment[cell]), "Crafted habitat equipment can be placed in the floor")
+	var fuel := game.inventory.count(I.FUEL_CELL)
+	_expect(fuel == 2 and not game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel,
+			"A generator waits for a commissioned room before accepting fuel")
 	_expect(not game.interact(), "A recycler cannot start with a hole in the roof")
 	game.terrain.set_block(TEST_ROOF, B.GLASS)
-	_expect(game.interact() and not game.breathable_here(), "The sealed habitat starts filling when commissioned")
+	_expect(game.interact() and not game.breathable_here(), "A sealed habitat can be commissioned before its generator starts")
+	var power := game.find_child("HabitatPower", true, false) as Label
+	game._update_survival_display(5.0)
+	_expect(power.visible and power.text.contains("Power off") and not game.breathable_here(),
+			"A newly commissioned habitat waits for power and shows how to start")
+	_expect(game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel - 1,
+			"Using a generator starts it and consumes one fuel cell")
+	_expect(power.text.contains("90 s") and not game.use_or_place(TEST_GENERATOR) and game.inventory.count(I.FUEL_CELL) == fuel - 1,
+			"The HUD shows the fuel timer and a running generator cannot waste another cell")
 	game._update_survival_display(5.0)
 	_expect(not game.breathable_here(), "A freshly sealed room requires time to fill with air")
 	game._update_survival_display(5.0)
@@ -544,12 +615,27 @@ func _check_habitat(game: MomoyoGame) -> float:
 	var room: HabitatRoom = game._habitats.get(TEST_RECYCLER)
 	if room == null:
 		_expect(false, "The commissioned room is registered")
-		return 0.0
+		return {}
 	var full := room.air
+	var stored := room.charge
 	game.terrain.set_block(TEST_ROOF, B.EMPTY)
 	game._update_survival_display(1.0)
 	_expect(room.air < full and game.breathable_here(), "A leaking habitat loses air gradually")
-	return room.air
+	_expect(is_equal_approx(room.charge, stored + HabitatRoom.GENERATOR_OUTPUT),
+			"A generator keeps charging while a breach stops the recycler")
+	return room.snapshot()
+
+
+func _place_habitat_device(game: MomoyoGame, cell: Vector2i, material: int) -> bool:
+	for slot in I.SLOT_COUNT:
+		if game.inventory.item_at(slot) != material:
+			continue
+		if slot < I.HOTBAR_SLOTS:
+			game.selected = slot
+		elif not game.move_inventory(slot, game.selected):
+			return false
+		return game.place(cell)
+	return false
 
 
 func _check_body_temperature() -> void:
@@ -904,6 +990,21 @@ func _check_previous_format() -> void:
 						vitals.vacuum_recovery = 2.5
 						_expect(previous.write(migrated_habitat) == OK and ExpeditionSave.new().read().get("vitals", {}) == vitals,
 								"Expedition saves preserve partial vacuum recovery")
+						_check_power_migration(previous, migrated_habitat)
+
+
+func _check_power_migration(save: ExpeditionSave, state: Dictionary) -> void:
+	var zone := Vector3i(1, 0, BlockWorld.Region.SURFACE)
+	var area := Rect2i(6, BlockWorld.PAD_ROW - 3, 4, 3)
+	state.format = ExpeditionSave.VACUUM_RECOVERY_FORMAT
+	state.vitals.elapsed = 120.0
+	state.habitats = {zone: {TEST_RECYCLER: {"bounds": area, "air": 72.0, "time": 5.0}}}
+	_expect(save.write(state) == OK, "A pre-power habitat fixture can be written")
+	var migrated := ExpeditionSave.new().read()
+	var room: Dictionary = migrated.get("habitats", {}).get(zone, {}).get(TEST_RECYCLER, {})
+	_expect(room.get("time") == 120.0 and room.get("air") == 72.0 and room.get("charge") == HabitatRoom.RECYCLER_BUFFER
+			and room.get("fuel_seconds") == 0.0 and migrated.get("vitals", {}).get("vacuum_recovery") == 2.5,
+			"Existing habitats retain air and get a fresh reserve without changing the explorer's vacuum recovery")
 
 
 func _check_journal() -> void:

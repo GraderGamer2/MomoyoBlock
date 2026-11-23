@@ -4,7 +4,7 @@ extends RefCounted
 enum Region { SURFACE, STATION }
 enum Block {
 	EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL, WORKBENCH,
-	GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER,
+	GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER, GENERATOR, BATTERY,
 }
 
 const CHUNK_BITS := 5
@@ -28,14 +28,18 @@ const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block
 const BLOCK_NAMES := [
 	"Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone",
 	"Pressure hull", "Workbench", "Pressure glass", "Support frame", "Insulation", "Airlock panel", "Oxygen recycler",
+	"Fuel generator", "Habitat battery",
 ]
-const MINING_SECONDS := [0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0, 1.38, 1.72, 0.86, 1.92, 2.1]
+const MINING_SECONDS := [
+	0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0, 1.38, 1.72, 0.86, 1.92, 2.1, 2.3, 1.9,
+]
 const TILE_COLORS: Array[Color] = [
 	Color.TRANSPARENT, Color("#aacea1"), Color("#856252"), Color("#50536e"),
 	Color("#6f8d9d"), Color("#60768b"), Color("#43696b"), Color("#bca474"),
 	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"), Color("#53736f"),
 	Color("#53a6ad"), Color("#96764f"), Color("#a76d5b"),
 	Color("#57788a"), Color("#4e8977"),
+	Color("#b17b4c"), Color("#6c70a8"),
 ]
 
 var region: int
@@ -164,7 +168,7 @@ static func is_placeable(material: int) -> bool:
 
 static func is_airtight(material: int) -> bool:
 	match material:
-		Block.ALLOY, Block.HULL, Block.BEACON, Block.GLASS, Block.AIRLOCK, Block.RECYCLER:
+		Block.ALLOY, Block.HULL, Block.BEACON, Block.GLASS, Block.AIRLOCK, Block.RECYCLER, Block.GENERATOR, Block.BATTERY:
 			return true
 		_:
 			return false

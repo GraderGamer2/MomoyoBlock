@@ -47,9 +47,14 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Recover vacuum grace gradually while breathing and keep recovery progress in the expedition save.
 - Give sand its own stack and categorize workbench recipes. Scale the game and menus with the window and keep the window controls at a consistent size when maximizing.
 
-## Next · Habitat power, storage, and ecology
+## 0.9 · Powered habitats
 
-- Connect life support to power generation and storage. Extend the room system to larger and interconnected habitats.
+- Run oxygen recyclers from fuel generators and batteries. Track remaining fuel, reserve power, and breathable air.
+- Let players build larger sealed rooms and retain air, fuel, and charge across trips and saves.
+
+## Next · Habitat networks, storage, and ecology
+
+- Connect adjacent rooms with airlocks and share power and life support across a habitat.
 - Add storage containers and more recipes that use resources from different environments.
 - Add more mineable blocks, including clay, ice, and mineral deposits, with distinct hardness and crafting uses. Expand construction with bulkheads, ladders, and floor plating.
 - Make mineral deposits more abundant and rare materials more common on hot, volcanic, and other inhospitable planets than on habitable or semi-habitable worlds, rewarding players who prepare for harsher expeditions.
