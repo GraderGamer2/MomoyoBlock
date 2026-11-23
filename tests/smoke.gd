@@ -10,6 +10,7 @@ const TEST_BATTERY := Vector2i(7, BlockWorld.PAD_ROW)
 const TEST_ROOF := Vector2i(8, BlockWorld.PAD_ROW - 4)
 const LINKED_RECYCLER := Vector2i(18, BlockWorld.PAD_ROW)
 const LINKED_GENERATOR := Vector2i(24, BlockWorld.PAD_ROW)
+const LINKED_PANEL := Vector2i(24, BlockWorld.PAD_ROW - 6)
 const TEST_SAND_PLACEMENT := Vector2i(3, BlockWorld.PAD_ROW - 1)
 
 var _failures := 0
@@ -218,6 +219,19 @@ func _run() -> void:
 	await _check_orbital_descent(game)
 	_expect(game.terrain.block_at(foreign_block) == B.ALLOY and game._habitats.has(TEST_RECYCLER),
 			"Falling to a planet restores its buildings and habitat records")
+	_check_habitat_solar(game)
+	_expect(game.save_expedition(), "Solar equipment can be saved with the habitat")
+	game.queue_free()
+	await get_tree().process_frame
+	game = _open_game()
+	await _frames(5)
+	reloaded_room = game._habitat_at_floor(LINKED_GENERATOR)
+	_expect(game.terrain.block_at(LINKED_PANEL) == B.SOLAR_PANEL
+			and game.terrain.block_at(LINKED_PANEL + Vector2i.DOWN) == B.SOLAR_MAST
+			and reloaded_room != null and is_equal_approx(reloaded_room.solar_output, HabitatNetworks.PANEL_OUTPUT),
+			"Reloading restores the solar blocks and derives their power from the saved terrain")
+	game.explorer.position = BlockWorld.pad_position()
+	game.explorer.velocity = Vector2.ZERO
 	_expect(game.begin_travel(), "The explorer can launch again after falling to the surface")
 	await _frames(90)
 	_expect(game.land_at(Vector2i.ZERO), "You can chart a return trip to the first planet")
@@ -286,10 +300,12 @@ func _check_menu() -> void:
 	app.game.terrain.set_block(bench, B.WORKBENCH)
 	app.show_workshop()
 	var tabs := app.find_child("RecipeCategories", true, false) as TabContainer
-	_expect(tabs != null and tabs.get_tab_count() == ExpeditionKit.CATEGORY_NAMES.size(), "The workbench has five recipe categories")
+	_expect(tabs != null and tabs.get_tab_count() == ExpeditionKit.CATEGORY_NAMES.size(), "The workbench shows every recipe category")
 	if tabs != null:
 		tabs.current_tab = ExpeditionKit.Category.LIFE_SUPPORT
-		_expect(tabs.get_current_tab_control().get_child_count() == 5, "Life support groups airlocks, recyclers, and power equipment")
+		_expect(tabs.get_current_tab_control().get_child_count() == 2, "Life support groups airlocks and recyclers")
+		tabs.current_tab = ExpeditionKit.Category.POWER
+		_expect(tabs.get_current_tab_control().get_child_count() == 5, "Power groups fuel, batteries, panels, and masts")
 		tabs.current_tab = ExpeditionKit.Category.TOOLS
 		_expect(tabs.get_current_tab_control().name == "Tools", "Choosing Tools opens the pulse upgrades")
 		app._craft(ExpeditionKit.Recipe.PULSE_1)
@@ -606,6 +622,44 @@ func _check_habitat_power() -> void:
 	world.record_edit(battery, B.GLASS)
 	room.sync(world, recycler)
 	_expect(room.charge == HabitatRoom.RECYCLER_BUFFER, "Removing a battery drops charge above the remaining capacity")
+	_check_solar_power(world, area, recycler, generator)
+
+
+func _check_solar_power(world: BlockWorld, area: Rect2i, recycler: Vector2i, generator: Vector2i) -> void:
+	var panel := Vector2i(generator.x, area.position.y - 2)
+	var shade := panel + Vector2i.UP
+	world.record_edit(panel, B.SOLAR_PANEL)
+	var room := HabitatRoom.new(area, 0.0)
+	room.sync(world, recycler)
+	var power := HabitatNetworks.new()
+	power.rebuild(world, [room])
+	power.advance_to(20.0)
+	_expect(room.breathable() and is_equal_approx(room.charge, 4.0),
+			"An exposed panel supplies the recycler and banks surplus sunlight")
+	room.refuel(generator)
+	power.advance_to(25.0)
+	_expect(room.fuel_seconds == HabitatRoom.FUEL_DURATION, "An exposed panel lets a filled generator idle")
+	world.record_edit(shade, B.GLASS)
+	power.refresh_solar(world)
+	_expect(room.solar_output > 0.54 and room.solar_output < HabitatNetworks.PANEL_OUTPUT,
+			"Pressure glass passes some light and reduces the solar yield")
+	world.record_edit(shade, B.ALLOY)
+	power.refresh_solar(world)
+	_expect(is_equal_approx(room.solar_output, 0.54), "An opaque overhang leaves only the side light")
+	power.advance_to(35.0)
+	_expect(is_equal_approx(room.fuel_seconds, 85.4) and is_equal_approx(room.charge, 9.6),
+			"Dim solar covers part of the recycler load and extends the generator fuel")
+
+	var resumed := HabitatRoom.from_snapshot(room.snapshot(), world, recycler, 35.0)
+	var resumed_power := HabitatNetworks.new()
+	resumed_power.rebuild(world, [resumed])
+	resumed_power.advance_to(700.0)
+	for second in range(36, 701):
+		power.advance_to(float(second))
+	_expect(resumed.fuel_seconds == 0.0 and resumed.charge == 0.0
+			and is_equal_approx(resumed.air, 0.54 * SurvivalState.CABIN_PRESSURE)
+			and is_equal_approx(resumed.air, room.air),
+			"Catch-up matches incremental updates after fuel and battery reserves run out under dim solar")
 
 
 func _check_habitat(game: MomoyoGame) -> Dictionary:
@@ -727,6 +781,41 @@ func _check_linked_habitats(game: MomoyoGame) -> void:
 			"Replacing one airlock panel with an airtight wall separates the power circuits")
 	game.terrain.set_block(airlock, B.AIRLOCK)
 	_expect(game._habitat_networks.members(annex).size() == 2, "Restoring both airlock panels reconnects the circuit")
+
+
+func _check_habitat_solar(game: MomoyoGame) -> void:
+	var annex := game._habitat_at_floor(LINKED_GENERATOR)
+	if annex == null:
+		return
+	var mast := LINKED_PANEL + Vector2i.DOWN
+	game.explorer.position = game.terrain.scene_point(mast + Vector2i.RIGHT, ActiveTerrain.CELL_CENTER)
+	game.set_sandbox(true)
+	_expect(game.select_sandbox_material(B.SOLAR_MAST) and game.use_or_place(mast), "The palette places a mast on a roof")
+	_expect(game.select_sandbox_material(B.SOLAR_PANEL) and game.use_or_place(LINKED_PANEL), "The palette places a panel on the mast")
+	game.set_sandbox(false)
+	_expect(game.use_or_place(LINKED_PANEL) and game._hud._status.text.contains("100% light"),
+			"Right-click reports the light at a reachable installed panel")
+	game.terrain.set_block(mast, B.EMPTY)
+	_expect(annex.solar_output == 0.0 and game.use_or_place(LINKED_PANEL)
+			and game._hud._status.text.contains("Mount above"), "Removing the mast disconnects an otherwise sunny panel")
+	game.terrain.set_block(mast, B.SOLAR_MAST)
+
+	game.explorer.position = game.terrain.scene_point(LINKED_RECYCLER + Vector2i.UP, ActiveTerrain.CELL_CENTER)
+	game._update_survival_display()
+	var fuel := annex.fuel_seconds
+	var power := game.find_child("HabitatPower", true, false) as Label
+	game._update_survival_display(5.0)
+	_expect(annex.fuel_seconds == fuel and power.text.contains("Solar 1.20"),
+			"A separate room's panel supplies the linked recycler and the HUD shows the solar output")
+	var shadow_row := LINKED_PANEL + Vector2i.UP
+	for dx in range(-1, 2):
+		game.terrain.set_block(shadow_row + Vector2i(dx, 0), B.ALLOY)
+	game._update_survival_display(5.0)
+	_expect(is_equal_approx(annex.fuel_seconds, fuel - 5.0) and power.text.contains("Solar 0.00"),
+			"Building cover outside the room immediately restores full fuel burn")
+	for dx in range(-1, 2):
+		game.terrain.set_block(shadow_row + Vector2i(dx, 0), B.EMPTY)
+	_expect(power.text.contains("Solar 1.20"), "Clearing the overhang restores sunlight")
 
 
 func _place_habitat_device(game: MomoyoGame, cell: Vector2i, material: int) -> bool:

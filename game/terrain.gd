@@ -344,5 +344,17 @@ func _paint_atlas() -> void:
 			for bar in 3:
 				image.fill_rect(Rect2i(x + 7 + bar * 4, 10, 2, 7), Color("#bbbdfa"))
 			image.fill_rect(Rect2i(x + 9, 5, 6, 2), Color("#d9dbff"))
+		elif block == BlockWorld.Block.SOLAR_PANEL:
+			image.fill_rect(Rect2i(x + 2, 3, size - 4, 15), Color("#142e4a"))
+			for column in 3:
+				for row in 2:
+					image.fill_rect(Rect2i(x + 4 + column * 6, 5 + row * 6, 4, 4), Color("#80b8e6"))
+			image.fill_rect(Rect2i(x + 6, 20, size - 12, 2), Color("#d8bb79"))
+		elif block == BlockWorld.Block.SOLAR_MAST:
+			image.fill_rect(Rect2i(x + 3, 2, size - 6, size - 4), Color("#292b39"))
+			image.fill_rect(Rect2i(x + 9, 1, 6, size - 2), color)
+			image.fill_rect(Rect2i(x + 11, 0, 2, size), Color("#f5d38f"))
+			for joint in [4, 17]:
+				image.fill_rect(Rect2i(x + 5, joint, size - 10, 3), color.lightened(0.2))
 
 	_atlas.texture = ImageTexture.create_from_image(image)

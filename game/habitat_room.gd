@@ -6,6 +6,7 @@ const MAX_HEIGHT := 10
 const STANDARD_VOLUME := 96.0
 const FUEL_DURATION := 90.0
 const GENERATOR_OUTPUT := 2.0
+const RECYCLER_DRAW := 1.0
 const BATTERY_CAPACITY := 120.0
 const RECYCLER_BUFFER := 30.0
 const AIR_LOSS_WITHOUT_POWER := 0.75
@@ -15,6 +16,8 @@ var bounds: Rect2i
 var air := 0.0
 var charge := 0.0
 var fuel_seconds := 0.0
+var solar_output := 0.0
+var solar_panels := 0
 var _time := 0.0
 var _openings := 0
 var _has_recycler := false
@@ -175,57 +178,75 @@ static func advance_network(rooms: Array, now: float) -> void:
 	var seconds := now - last_time
 	if seconds <= 0.0:
 		return
-	var generator_time := 0.0
-	var generated_charge := 0.0
 	var recycling := false
 	var volume := 0
+	var solar := 0.0
 	for room: HabitatRoom in rooms:
 		if room._time < last_time:
 			room.advance_to(last_time)
 		room._time = now
+		solar += room.solar_output
 		recycling = recycling or room.recycles_air()
 		if room.sealed():
 			volume += room._air_cells.size()
-		var burned := minf(seconds, room.fuel_seconds)
-		room.fuel_seconds -= burned
-		if room.fuel_seconds == 0.0:
-			room._generator_cell = null
-		generator_time = maxf(generator_time, burned)
-		generated_charge += burned * GENERATOR_OUTPUT
-	# Any running generator covers the recycler. Pool its surplus and use batteries after the last one stops.
+	var burn_rate := maxf(0.0, 1.0 - solar / RECYCLER_DRAW)
+	var generator_time := 0.0
+	var generated_charge := 0.0
+	if burn_rate > 0.0:
+		for room: HabitatRoom in rooms:
+			var burned := minf(seconds * burn_rate, room.fuel_seconds)
+			room.fuel_seconds -= burned
+			if room.fuel_seconds == 0.0:
+				room._generator_cell = null
+			generator_time = maxf(generator_time, burned / burn_rate)
+			generated_charge += burned * GENERATOR_OUTPUT
+	# Solar covers demand first. A running generator makes up the deficit and can charge the reserve.
+	var demand := RECYCLER_DRAW if recycling else 0.0
+	var deficit := maxf(0.0, demand - solar)
 	var pumping_for := generator_time if recycling else 0.0
-	var surplus := generated_charge - pumping_for
+	var surplus := generated_charge - deficit * generator_time + maxf(0.0, solar - demand) * seconds
 	for room: HabitatRoom in rooms:
 		var stored := minf(room._charge_capacity - room.charge, surplus)
 		room.charge += stored
 		surplus -= stored
+	var limited_power := 0.0
 	if recycling:
-		for room: HabitatRoom in rooms:
-			var discharged := minf(room.charge, maxf(0.0, seconds - pumping_for))
-			room.charge -= discharged
-			pumping_for += discharged
+		if deficit == 0.0:
+			pumping_for = seconds
+		else:
+			for room: HabitatRoom in rooms:
+				var discharged := minf(room.charge, deficit * maxf(0.0, seconds - pumping_for))
+				room.charge -= discharged
+				pumping_for += discharged / deficit
+			limited_power = solar / demand
 	var pump_rate := CabinAtmosphere.PUMP_RATE * minf(1.0, STANDARD_VOLUME / maxi(1, volume))
 	for room: HabitatRoom in rooms:
-		room._advance_air(seconds, pumping_for, pump_rate)
+		room._advance_air(seconds, pumping_for, pump_rate, limited_power)
 
 
-func _advance_air(seconds: float, pumping_for: float, pump_rate: float) -> void:
+func _advance_air(seconds: float, pumping_for: float, pump_rate: float, limited_power: float) -> void:
 	if _openings > 0:
 		air = CabinAtmosphere.vent(air, _openings, seconds)
 		return
 	if _air_cells.is_empty():
 		pumping_for = 0.0
+		limited_power = 0.0
 	air = move_toward(air, SurvivalState.CABIN_PRESSURE, pumping_for * pump_rate)
-	air = move_toward(air, 0.0, maxf(0.0, seconds - pumping_for) * AIR_LOSS_WITHOUT_POWER)
+	# A partly powered recycler can sustain only part of normal cabin pressure.
+	var target := SurvivalState.CABIN_PRESSURE * limited_power
+	var rate := pump_rate * limited_power if air < target else AIR_LOSS_WITHOUT_POWER * (1.0 - limited_power)
+	air = move_toward(air, target, maxf(0.0, seconds - pumping_for) * rate)
 
 
 func breathable() -> bool:
 	return air >= CabinAtmosphere.BREATHABLE_PRESSURE
 
 
-func condition(recycling: bool, supplied: bool) -> String:
+func condition(recycling: bool, supplied: bool, solar: float) -> String:
 	if _openings > 0:
 		return "Habitat venting"
+	if recycling and not supplied and solar > 0.0:
+		return "Habitat on limited solar"
 	if recycling and supplied and air < SurvivalState.CABIN_PRESSURE:
 		return "Habitat breathable" if breathable() else "Habitat filling"
 	if breathable():
@@ -233,23 +254,31 @@ func condition(recycling: bool, supplied: bool) -> String:
 	return "Habitat needs power" if recycling else "Habitat offline"
 
 
-static func network_reading(rooms: Array) -> String:
+static func network_reading(rooms: Array, solar: float) -> String:
 	var fuel := 0.0
 	var reserve := 0.0
 	var capacity := 0.0
 	var has_generator := false
+	var panels := 0
 	for room: HabitatRoom in rooms:
 		fuel = maxf(fuel, room.fuel_seconds)
 		reserve += room.charge
 		capacity += room._charge_capacity
 		has_generator = has_generator or room._has_generator
+		panels += room.solar_panels
 	var battery := "Battery %d/%d s" % [ceili(reserve), roundi(capacity)]
 	var reading := "Power off · Load fuel" if has_generator else "Power off · Fit a generator"
 	if fuel > 0.0:
 		reading = "Fuel %d s · %s" % [ceili(fuel), battery]
-	elif reserve > 0.0:
+	elif reserve > 0.0 or solar > 0.0:
 		reading = battery
-	return "%d rooms · %s" % [rooms.size(), reading] if rooms.size() > 1 else reading
+	elif panels > 0:
+		reading = "Power off · Panels shaded"
+	if rooms.size() > 1:
+		reading = "%d rooms · %s" % [rooms.size(), reading]
+	if panels > 0:
+		reading += "\nSolar %.2f u/s" % solar
+	return reading
 
 
 func snapshot() -> Dictionary:

@@ -4,11 +4,11 @@ extends RefCounted
 const B := BlockWorld.Block
 enum Recipe {
 	WORKBENCH, SMELT, REPAIR, PULSE_1, PULSE_2, PULSE_3, CANISTER, LINER, GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER,
-	GENERATOR, BATTERY, FUEL_CELL,
+	GENERATOR, BATTERY, FUEL_CELL, SOLAR_PANEL, SOLAR_MAST,
 }
-enum Category { MATERIALS, CONSTRUCTION, SURVIVAL, TOOLS, LIFE_SUPPORT }
+enum Category { MATERIALS, CONSTRUCTION, SURVIVAL, TOOLS, LIFE_SUPPORT, POWER }
 
-const CATEGORY_NAMES := ["Materials", "Construction", "Survival", "Tools", "Life support"]
+const CATEGORY_NAMES := ["Materials", "Construction", "Survival", "Tools", "Life support", "Power"]
 const CANISTER_REFILL := 45.0
 const ALLOY_YIELD := 3
 const MAX_PULSE_LEVEL := 3
@@ -77,23 +77,33 @@ const RECIPES := [
 	},
 	{
 		"category": Category.LIFE_SUPPORT,
-		"name": "Oxygen recycler", "benefit": "Pressurizes one sealed room when powered.",
+		"name": "Oxygen recycler", "benefit": "Uses power to fill sealed rooms with air.",
 		"cost": {B.ALLOY: 4, B.ORE: 2}, "item": B.RECYCLER, "count": 1,
 	},
 	{
-		"category": Category.LIFE_SUPPORT,
-		"name": "Fuel generator", "benefit": "Fit in the same floor as the recycler.",
+		"category": Category.POWER,
+		"name": "Fuel generator", "benefit": "Fit into a habitat floor and load a fuel cell.",
 		"cost": {B.ALLOY: 5, B.ORE: 2}, "item": B.GENERATOR, "count": 1,
 	},
 	{
-		"category": Category.LIFE_SUPPORT,
+		"category": Category.POWER,
 		"name": "Habitat battery", "benefit": "Stores 120 seconds of reserve power.",
 		"cost": {B.ALLOY: 3, B.ORE: 1}, "item": B.BATTERY, "count": 1,
 	},
 	{
-		"category": Category.LIFE_SUPPORT,
+		"category": Category.POWER,
 		"name": "Fuel cells ×2", "benefit": "Right-click a generator to load one.",
 		"cost": {B.ALLOY: 1, B.ORE: 2}, "item": ExpeditionInventory.FUEL_CELL, "count": 2,
+	},
+	{
+		"category": Category.POWER,
+		"name": "Solar panel", "benefit": "Mount on a roof or mast. Right-click for light.",
+		"cost": {B.ALLOY: 3, B.ORE: 2}, "item": B.SOLAR_PANEL, "count": 1,
+	},
+	{
+		"category": Category.POWER,
+		"name": "Solar masts ×4", "benefit": "Stack from the roof to lift panels above shade.",
+		"cost": {B.ALLOY: 2}, "item": B.SOLAR_MAST, "count": 4,
 	},
 ]
 

@@ -35,13 +35,14 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | E at a beacon | Travel between the current planet and Relay Nine |
 | E beside an airlock or recycler | Cycle the airlock or commission life support |
 | Right click a fuel generator | Commission a valid habitat and load a fuel cell |
+| Right click a solar panel | Check its light and power output |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
 The starter pulse tool mines and collects within **2.1 tiles**. Keep the pointer on a block while holding left click to mine it. Harder blocks take longer, and solid tiles stop the pulse. The tool has unlimited durability. Its three upgrades increase hard-block mining power and extend range to **2.65**, **3.1**, and **3.6 tiles**. Placement has a two-tile reach. Mined sand has its own stack and can be placed from the hotbar.
 
-Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to browse **Materials**, **Construction**, **Survival**, **Tools**, and **Life support**. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
+Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Select it in the hotbar, then right-click an open tile in reach. Press **C** nearby to browse **Materials**, **Construction**, **Survival**, **Tools**, **Life support**, and **Power**. Mine the workbench to pack it up. Beacons provide travel and shelter. Relay Nine's workshop is inside the cabin.
 
 The explorer carries **9 hotbar slots and 5 suit storage slots**. Open the inventory with **Tab** and drag a stack or choose a source and destination. Suit storage is accessible while wearing the suit. New stacks hold up to 64 items. Larger stacks carried over from older saves can be used down over time.
 
@@ -57,14 +58,20 @@ In orbit, a full vacuum reserve gives you **8 seconds** without breathable air b
 
 ## Build an oxygen shelter
 
-1. At a workbench, open **Life support** and craft an **oxygen recycler**, **fuel generator**, and **fuel cells**. Craft **airlock panels** for an entrance and **habitat batteries** for extended backup power.
-2. Build an airtight rectangle with alloy or pressure glass. The interior can be **2–16 tiles wide** and **2–10 tiles high**. Fit the recycler, generator, and any batteries into the same floor, with the recycler facing the room.
+1. At a workbench, open **Life support** and craft an **oxygen recycler** and **airlock panels**. In **Power**, craft a solar panel or a fuel generator and fuel cells. Craft habitat batteries for extra reserve power.
+2. Build an airtight rectangle with alloy or pressure glass. The interior can be **2–16 tiles wide** and **2–10 tiles high**. Fit the recycler and any generator or batteries into the floor. Mount solar panels above the roof.
 3. Stack two airlock panels in a side wall. Leave two tiles of clearance on both sides and press **E** beside the airlock to enter.
-4. Right-click the generator within reach to commission the room and load one fuel cell. **E** near a recycler surveys the shelter without using fuel. Setup feedback identifies incomplete walls, roofs, floors, or missing recyclers. The HUD tracks breathable air, fuel, and battery reserve.
+4. Press **E** near the recycler to commission the room. Right-clicking a generator within reach also commissions the room and loads one fuel cell. Setup feedback identifies incomplete walls, roofs, floors, or missing recyclers. The HUD tracks breathable air, fuel, and battery reserve.
 
 For a linked habitat, build adjoining rectangles with a common side wall and stack two airlock panels in that wall. Each room needs a sealed floor, roof, and side walls. Press **E** near a recycler to link newly built rooms. One recycler can supply the intact rooms, and generators and batteries in any connected floor share power across the network. A breach vents the affected room. Repair the shell to resume filling it.
 
-A fuel cell runs the generator for **90 seconds**. Each battery adds **120 seconds** of storage to the recycler's **30-second** buffer. If the reserve runs out, air gradually declines. Fuel and charge advance with expedition time, including time spent away from the habitat.
+A fuel cell runs the generator for **90 seconds** at full burn. Each battery adds **120 seconds** of storage to the recycler's **30-second** buffer. If power runs short, air pressure gradually drops. Fuel and charge advance with expedition time, including time spent away from the habitat.
+
+### Site your solar panels
+
+Place a panel directly above the habitat roof or on a vertical stack of **solar masts** starting at the roof. Every panel feeds the room below it and any rooms linked through airlocks. Right-click the panel within reach to check its light percentage and output. Terrain and structures up to 32 tiles above can cast shade. Pressure glass and open support frames let some light through.
+
+One fully exposed panel powers the recycler and charges its reserve. Partial shade cuts output, so fuel and batteries make up the difference. The more light the base collects, the slower its generators burn fuel. With enough solar power, they pause. Raise panels above overhangs or build on exposed ground to save more fuel.
 
 ## Sandbox materials
 

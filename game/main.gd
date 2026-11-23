@@ -260,8 +260,18 @@ func _clear_pulse() -> void:
 func use_or_place(cell: Vector2i) -> bool:
 	if _in_transit:
 		return false
-	if terrain.block_at(cell) == BlockWorld.Block.GENERATOR:
-		return _refuel_generator(cell)
+	match terrain.block_at(cell):
+		BlockWorld.Block.GENERATOR:
+			return _refuel_generator(cell)
+		BlockWorld.Block.SOLAR_PANEL:
+			if not _within_reach(cell):
+				_feedback_on_distant_action(cell)
+				return false
+			if not terrain.pulse_path_clear(explorer.position, cell):
+				_hud.show_status("The solar panel is blocked.", false)
+				return false
+			_hud.show_status(_habitat_networks.panel_reading(terrain.world, cell))
+			return true
 	var item := _held_item()
 	if item == ExpeditionInventory.FUEL_CELL:
 		_hud.show_status("Right-click a fuel generator to load a cell.", false)
@@ -283,13 +293,13 @@ func _refuel_generator(cell: Vector2i) -> bool:
 		room = _habitat_at_floor(cell)
 	HabitatRoom.advance_network(_habitat_networks.members(room), survival.elapsed)
 	if room.fuel_seconds > 0.0:
-		_hud.show_status("The habitat generator is still running.", false)
+		_hud.show_status("The generator already has fuel.", false)
 		return false
 	if not sandbox_enabled and not inventory.take(ExpeditionInventory.FUEL_CELL, 1, survival.suit_equipped):
 		_hud.show_status("Craft a fuel cell at a workbench to refuel.", false)
 		return false
 	room.refuel(cell)
-	_hud.show_status("Generator running.")
+	_hud.show_status("Fuel cell loaded.")
 	_show_inventory()
 	_update_survival_display()
 	return true
@@ -491,7 +501,7 @@ func _commission_habitat(equipment: Vector2i) -> bool:
 		room.sync(terrain.world, anchor)
 	_rebuild_habitat_networks()
 	var count := _habitat_networks.members(_habitat_at_floor(equipment)).size()
-	_hud.show_status("Life support linked across %d rooms." % count if count > 1 else "Habitat ready. Right-click its generator to load fuel.")
+	_hud.show_status("Life support linked across %d rooms." % count if count > 1 else "Habitat commissioned.")
 	_update_survival_display()
 	return true
 
@@ -693,6 +703,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var temperature := outside_temperature
 	var breathable := _breathable_with(habitat)
 	var network: Array = [] if habitat == null else _habitat_networks.members(habitat)
+	var solar := 0.0
 	var air := "Breathable air" if breathable else "Suit oxygen in use"
 	var at_beacon := _at_beacon()
 	if inside:
@@ -712,8 +723,10 @@ func _update_survival_display(seconds := 0.0) -> void:
 		var clean_air := habitat.air / SurvivalState.CABIN_PRESSURE
 		pressure = lerpf(pressure, SurvivalState.CABIN_PRESSURE, clean_air)
 		temperature = lerpf(temperature, SurvivalState.CABIN_TEMPERATURE, clean_air)
-		air = habitat.condition(network.any(func(room: HabitatRoom) -> bool: return room.recycles_air()),
-				network.any(func(room: HabitatRoom) -> bool: return room.powered()))
+		for room: HabitatRoom in network:
+			solar += room.solar_output
+		var supplied := solar >= HabitatRoom.RECYCLER_DRAW or network.any(func(room: HabitatRoom) -> bool: return room.powered())
+		air = habitat.condition(network.any(func(room: HabitatRoom) -> bool: return room.recycles_air()), supplied, solar)
 	elif on_surface:
 		if pressure > SurvivalState.SUIT_PRESSURE_LIMIT:
 			air = "Suit strain · liner equipped" if kit.liner else "Suit strain · Pressure liner needed"
@@ -751,7 +764,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var habitat_power := ""
 	if habitat != null and not at_beacon:
 		environment = "Habitat air %.0f%% · %.0f kPa" % [habitat.air * 100.0 / SurvivalState.CABIN_PRESSURE, pressure]
-		habitat_power = HabitatRoom.network_reading(network)
+		habitat_power = HabitatRoom.network_reading(network, solar)
 	_hud.show_survival(survival, inventory, air, weather_text if on_surface else "Orbit", environment,
 			(on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT) or
 			(inside and not cabin.breaches.is_empty()),
@@ -801,6 +814,10 @@ func _on_block_changed(cell: Vector2i) -> void:
 		habitat_changed = true
 	if habitat_changed:
 		_rebuild_habitat_networks()
+		_update_survival_display()
+	elif _habitat_networks.solar_affected(cell):
+		_habitat_networks.advance_to(survival.elapsed)
+		_habitat_networks.refresh_solar(terrain.world)
 		_update_survival_display()
 	if region != BlockWorld.Region.STATION or not BlockWorld.STATION_PRESSURE_AREA.has_point(cell):
 		return

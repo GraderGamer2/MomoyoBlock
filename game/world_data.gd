@@ -4,7 +4,7 @@ extends RefCounted
 enum Region { SURFACE, STATION }
 enum Block {
 	EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL, WORKBENCH,
-	GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER, GENERATOR, BATTERY,
+	GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER, GENERATOR, BATTERY, SOLAR_PANEL, SOLAR_MAST,
 }
 
 const CHUNK_BITS := 5
@@ -28,10 +28,11 @@ const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block
 const BLOCK_NAMES := [
 	"Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone",
 	"Pressure hull", "Workbench", "Pressure glass", "Support frame", "Insulation", "Airlock panel", "Oxygen recycler",
-	"Fuel generator", "Habitat battery",
+	"Fuel generator", "Habitat battery", "Solar panel", "Solar mast",
 ]
 const MINING_SECONDS := [
 	0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0, 1.38, 1.72, 0.86, 1.92, 2.1, 2.3, 1.9,
+	1.55, 1.25,
 ]
 const TILE_COLORS: Array[Color] = [
 	Color.TRANSPARENT, Color("#aacea1"), Color("#856252"), Color("#50536e"),
@@ -39,7 +40,7 @@ const TILE_COLORS: Array[Color] = [
 	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"), Color("#53736f"),
 	Color("#53a6ad"), Color("#96764f"), Color("#a76d5b"),
 	Color("#57788a"), Color("#4e8977"),
-	Color("#b17b4c"), Color("#6c70a8"),
+	Color("#b17b4c"), Color("#6c70a8"), Color("#4275a6"), Color("#b49160"),
 ]
 
 var region: int

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 · 2026-11-23
+
+- Craft roof-mounted solar panels and stackable solar masts in the new Power workbench tab. Both blocks are available in the sandbox palette.
+- Position panels away from hills and overhangs to collect more light. Right-click a panel to check its light percentage and output. Pressure glass passes a portion of the light.
+- Share solar power across linked rooms. Bright panels can power the recycler and charge batteries without burning fuel. Shaded panels produce less power and save less fuel.
+
 ## 0.10.0 · 2026-11-23
 
 - Right-click a fuel generator to commission a correctly built shelter and refuel in one action. Setup feedback identifies incomplete shells and missing recyclers.

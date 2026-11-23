@@ -58,6 +58,11 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Commission valid shelters directly from their generators and guide players through incomplete shells.
 - Give playtesters a per-expedition sandbox toggle and a palette of unlimited building blocks.
 
+## 0.11 · Solar power and placement
+
+- Craft solar panels and stackable masts for habitat roofs. Terrain and buildings shade the panels, so siting and elevation affect power yield.
+- Use solar output to reduce generator fuel use and charge habitat batteries. Show local light at the panel and total solar output on the habitat HUD.
+
 ## Next · Storage and ecology
 
 - Add storage containers and more recipes that use resources from different environments.
