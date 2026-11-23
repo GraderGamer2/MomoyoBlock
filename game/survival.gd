@@ -8,6 +8,8 @@ const VACUUM_DRAIN := 1.10
 const STORM_SURCHARGE := 0.20
 const HYPOXIA_DAMAGE := 4.0
 const SUIT_PRESSURE_LIMIT := 175
+const SUIT_LEAK_START := 55.0
+const RESCUE_SUIT_INTEGRITY := 35.0
 const CABIN_TEMPERATURE := 21.0
 const CABIN_PRESSURE := 101
 const NORMAL_BODY_TEMPERATURE := 37.0
@@ -18,47 +20,77 @@ const HEAT_STRESS_TEMPERATURE := 40.0
 const RECOVERY_TIME := 20.0
 const EXPOSURE_TIME := 65.0
 const STORM_EXPOSURE_TIME := 50.0
+const BARE_EXPOSURE_TIME := 27.0
+const BARE_STORM_EXPOSURE_TIME := 18.0
 
 var health := MAX_LEVEL
 var hunger := MAX_LEVEL
 var thirst := MAX_LEVEL
 var oxygen := MAX_LEVEL
+var suit_integrity := MAX_LEVEL
+var suit_equipped := true
 var body_temperature := NORMAL_BODY_TEMPERATURE
 var food := 2
 var water := 2
 var elapsed := 0.0
 
 
-func advance(seconds: float, breathable: bool, harsh_weather: bool, pressure := CABIN_PRESSURE,
+func advance(seconds: float, breathable: bool, storm_wear: float, pressure := CABIN_PRESSURE,
 		temperature := CABIN_TEMPERATURE, reinforced := false) -> void:
 	elapsed += seconds
+	var harsh_weather := storm_wear > 0.0
 	var cold := clampf((4.0 - temperature) * 0.002, 0.0, 0.11)
 	var heat := clampf((temperature - 28.0) * 0.004, 0.0, 0.19)
 	hunger = maxf(0.0, hunger - (0.17 + cold) * seconds)
 	thirst = maxf(0.0, thirst - (0.29 + heat + (0.20 if harsh_weather else 0.0)) * seconds)
-	var oxygen_rate := 16.0 if breathable else -(VACUUM_DRAIN + (STORM_SURCHARGE if harsh_weather else 0.0))
-	oxygen = clampf(oxygen + oxygen_rate * seconds, 0.0, MAX_LEVEL)
+
+	var pressure_strain := maxf(0.0, float(pressure - SUIT_PRESSURE_LIMIT))
+	var liner_factor := 0.2 if reinforced else 1.0
+	damage_suit(seconds * (storm_wear + pressure_strain * 0.016 * liner_factor))
+	var protected := suit_active()
+	if protected:
+		var leak := maxf(0.0, SUIT_LEAK_START - suit_integrity) / SUIT_LEAK_START
+		var drain := VACUUM_DRAIN + leak * 1.4 + (STORM_SURCHARGE if harsh_weather else 0.0)
+		var oxygen_rate := 16.0 if breathable else -drain
+		oxygen = clampf(oxygen + oxygen_rate * seconds, 0.0, MAX_LEVEL)
 
 	var thermal_target := body_temperature_target(temperature)
 	var response_time := STORM_EXPOSURE_TIME if harsh_weather else EXPOSURE_TIME
+	if not protected:
+		response_time = BARE_STORM_EXPOSURE_TIME if harsh_weather else BARE_EXPOSURE_TIME
 	if thermal_target == NORMAL_BODY_TEMPERATURE:
 		response_time = RECOVERY_TIME
 	body_temperature = lerpf(body_temperature, thermal_target, 1.0 - exp(-seconds / response_time))
 
-	var damage := maxf(0.0, float(pressure - SUIT_PRESSURE_LIMIT)) * (0.004 if reinforced else 0.020)
+	var damage := pressure_strain * 0.020 * liner_factor
+	if not protected:
+		var extreme_pressure := maxi(0, 50 - pressure) + maxi(0, pressure - 155)
+		damage = extreme_pressure * 0.035 + storm_wear * 3.0
+	if not breathable:
+		if not protected:
+			damage += 12.0 if pressure == 0 else 9.0
+		elif oxygen <= 0.0:
+			damage += HYPOXIA_DAMAGE
 	var thermal_stress := maxf(0.0, COLD_STRESS_TEMPERATURE - body_temperature) \
 			+ maxf(0.0, body_temperature - HEAT_STRESS_TEMPERATURE)
-	damage += thermal_stress * 0.35
+	damage += thermal_stress * (0.35 if protected else 0.65)
 	if hunger <= 0.0:
 		damage += 1.4
 	if thirst <= 0.0:
 		damage += 2.8
-	if oxygen <= 0.0:
-		damage += HYPOXIA_DAMAGE
 	if damage > 0.0:
 		health = maxf(0.0, health - damage * seconds)
-	elif minf(hunger, thirst) > 72.0 and oxygen > 70.0:
+	elif minf(hunger, thirst) > 72.0 and (breathable or oxygen > 70.0):
 		health = minf(MAX_LEVEL, health + 0.5 * seconds)
+
+
+func suit_active() -> bool:
+	return suit_equipped and suit_integrity > 0.0
+
+
+func damage_suit(amount: float) -> void:
+	if suit_active():
+		suit_integrity = maxf(0.0, suit_integrity - amount)
 
 
 static func body_temperature_target(ambient: float) -> float:
@@ -87,6 +119,8 @@ func restore_after_rescue() -> void:
 	hunger = 60.0
 	thirst = 60.0
 	oxygen = MAX_LEVEL
+	suit_equipped = true
+	suit_integrity = maxf(suit_integrity, RESCUE_SUIT_INTEGRITY)
 	body_temperature = NORMAL_BODY_TEMPERATURE
 	food = 1
 	water = 1
@@ -95,6 +129,7 @@ func restore_after_rescue() -> void:
 func snapshot() -> Dictionary:
 	return {
 		"health": health, "hunger": hunger, "thirst": thirst, "oxygen": oxygen,
+		"suit_integrity": suit_integrity, "suit_equipped": suit_equipped,
 		"body_temperature": body_temperature, "food": food, "water": water, "elapsed": elapsed,
 	}
 
@@ -104,6 +139,8 @@ func restore(data: Dictionary) -> void:
 	hunger = data.hunger
 	thirst = data.thirst
 	oxygen = data.oxygen
+	suit_integrity = data.suit_integrity
+	suit_equipped = data.suit_equipped
 	body_temperature = data.body_temperature
 	food = data.food
 	water = data.water
@@ -111,14 +148,14 @@ func restore(data: Dictionary) -> void:
 
 
 static func valid_snapshot(data: Variant) -> bool:
-	if not data is Dictionary:
+	if not data is Dictionary or not data.get("suit_equipped") is bool:
 		return false
 	var temperature: Variant = data.get("body_temperature")
 	if not (temperature is float or temperature is int) or not is_finite(float(temperature)):
 		return false
 	if temperature < MIN_BODY_TEMPERATURE or temperature > MAX_BODY_TEMPERATURE:
 		return false
-	for key in ["health", "hunger", "thirst", "oxygen", "elapsed"]:
+	for key in ["health", "hunger", "thirst", "oxygen", "suit_integrity", "elapsed"]:
 		var value: Variant = data.get(key)
 		if not (value is float or value is int) or not is_finite(float(value)) or value < 0.0:
 			return false

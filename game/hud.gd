@@ -79,8 +79,8 @@ func _ready() -> void:
 	_atmosphere = _label("", 12, MUTED)
 	_atmosphere.name = "LocalAtmosphere"
 	readings.add_child(_atmosphere)
-	var names := ["Health", "Hunger", "Thirst", "Oxygen"]
-	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf")]
+	var names := ["Health", "Hunger", "Thirst", "Oxygen", "Suit"]
+	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf"), Color("#a5a9ed")]
 	for i in names.size():
 		var row := HBoxContainer.new()
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -130,9 +130,9 @@ func _ready() -> void:
 	_supplies = _label("", 13, GREEN)
 	readings.add_child(_supplies)
 
-	var legend := _label("A / D Move     Space Jump\nHold left Mine     Right click Build\nF Gather     R Eat     T Drink\nC Craft     O Use air     F5 Save     Esc Pause", 13, PAPER)
+	var legend := _label("A / D Move     Space Jump\nHold left Pulse mine     Right click Build\nF Collect     C Craft     U Suit\nR Eat     T Drink     O Use air\nF5 Save     Esc Pause", 13, PAPER)
 	var controls := _panel()
-	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -120), Vector2(26, -20))
+	_anchor(screen, controls, Control.PRESET_BOTTOM_LEFT, Vector2(26, -140), Vector2(26, -20))
 	controls.add_child(legend)
 
 	var bar := VBoxContainer.new()
@@ -150,7 +150,7 @@ func _ready() -> void:
 	slots.add_theme_constant_override("separation", 6)
 	bar.add_child(slots)
 	_slot_styles = [_style(Color("#395061")), _style(GREEN)]
-	for i in BlockWorld.MATERIAL_NAMES.size():
+	for i in BlockWorld.MATERIAL_NAMES.size() + 1:
 		var panel := _panel()
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		slots.add_child(panel)
@@ -178,13 +178,19 @@ func _ready() -> void:
 
 func show_region(region: int, planet: PlanetProfile) -> void:
 	var on_surface := region == BlockWorld.Region.SURFACE
-	_region.text = String(planet.details.biome).to_upper() if on_surface else "ORBITAL STATION"
+	if on_surface:
+		_region.text = "%s  ·  %.2f g" % [String(planet.details.biome).to_upper(), planet.gravity_g]
+	else:
+		_region.text = "ARTIFICIAL GRAVITY  ·  %.2f g" % (BlockWorld.STATION_GRAVITY_PX / PlanetProfile.EARTH_GRAVITY_PX)
 	_location.text = planet.title() if on_surface else "Relay Nine"
 
 
-func show_inventory(inventory: PackedInt32Array, selected: int) -> void:
+func show_inventory(inventory: PackedInt32Array, selected: int, workbenches: int) -> void:
 	for i in _slot_labels.size():
-		_slot_labels[i].text = "%d  %s\n%d" % [i + 1, BlockWorld.MATERIAL_NAMES[i], inventory[i]]
+		var is_bench := i == inventory.size()
+		var caption := "Workbench" if is_bench else BlockWorld.MATERIAL_NAMES[i]
+		var count := workbenches if is_bench else inventory[i]
+		_slot_labels[i].text = "%d  %s\n%d" % [i + 1, caption, count]
 		_slot_panels[i].add_theme_stylebox_override("panel", _slot_styles[int(i == selected)])
 
 
@@ -212,10 +218,12 @@ func hide_mining() -> void:
 	_mining.hide()
 
 
-func show_workshop(nearby: bool, region: int) -> void:
-	_workshop.visible = nearby
-	if nearby:
-		_workshop.text = "C  Beacon workbench" if region == BlockWorld.Region.SURFACE else "C  Relay Nine workshop"
+func show_workshop(workbench: String) -> void:
+	_workshop.visible = not workbench.is_empty()
+	if _workshop.visible:
+		var prompt := "C  " + workbench
+		if _workshop.text != prompt:
+			_workshop.text = prompt
 
 
 func show_status(message: String, saved: bool = true) -> void:
@@ -271,10 +279,12 @@ static func _style(border: Color) -> StyleBoxFlat:
 
 func show_survival(state: SurvivalState, kit: ExpeditionKit, air: String, weather: String,
 		atmosphere: String, pressure_warning: bool, temperature_target: float) -> void:
-	var levels := [state.health, state.hunger, state.thirst, state.oxygen]
+	var levels := [state.health, state.hunger, state.thirst, state.oxygen, state.suit_integrity]
 	for i in _meters.size():
 		_meters[i].value = levels[i]
 		var value := str(ceili(levels[i]))
+		if i == levels.size() - 1:
+			value += "%"
 		if _meter_values[i].text != value:
 			_meter_values[i].text = value
 	_show_body_temperature(state.body_temperature, temperature_target)

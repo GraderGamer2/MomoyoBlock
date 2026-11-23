@@ -1,26 +1,31 @@
 class_name PlanetProfile
 extends RefCounted
 
+const EARTH_RADIUS_KM := 6371.0
+const EARTH_GRAVITY_PX := 940.0
+const ROCK_COMPOSITION := ["Silicate", "Porous rock", "Iron-rich", "Ice-rich"]
+const ROCK_DENSITY := [1.0, 0.79, 1.13, 0.63]
+
 const LEGACY_PROFILES := [
 	{
 		"name": "Cinder Reach", "biome": "Temperate", "weather": "Rain",
 		"flora": "Amberleaf", "water": "Rainwater", "fauna": "Lopers",
-		"sky": Color("#709e90"), "breathable": true, "gravity": 940.0, "relief": 1.0,
+		"sky": Color("#709e90"), "breathable": true, "relief": 1.0,
 	},
 	{
 		"name": "Brass Dunes", "biome": "Arid", "weather": "Dust storm",
 		"flora": "Suncap", "water": "Dew cactus", "fauna": "Dune skippers",
-		"sky": Color("#bc815c"), "breathable": false, "gravity": 760.0, "relief": 1.3,
+		"sky": Color("#bc815c"), "breathable": false, "relief": 1.3,
 	},
 	{
 		"name": "Glass Tundra", "biome": "Frozen", "weather": "Snow",
 		"flora": "Frostberry", "water": "Ice bud", "fauna": "Snow hoppers",
-		"sky": Color("#779db0"), "breathable": true, "gravity": 860.0, "relief": 0.66,
+		"sky": Color("#779db0"), "breathable": true, "relief": 0.66,
 	},
 	{
 		"name": "Violet Basin", "biome": "Thin atmosphere", "weather": "Haze",
 		"flora": "Lantern moss", "water": "Mist pod", "fauna": "Basin grazers",
-		"sky": Color("#987fa5"), "breathable": false, "gravity": 620.0, "relief": 1.65,
+		"sky": Color("#987fa5"), "breathable": false, "relief": 1.65,
 	},
 ]
 
@@ -55,6 +60,11 @@ var wind: float
 var food_column: int
 var water_column: int
 var pressure_kpa: int
+var rock_type: int
+var radius_earth: float
+var density_earth: float
+var mass_earth: float
+var gravity_g: float
 var _mean_temperature: float
 var _day_length: float
 var _temperature_swing: float
@@ -96,7 +106,6 @@ func _init(address: Vector2i, universe_seed: int = 0) -> void:
 			"fauna": LIFE_TRAITS[sample(13) % LIFE_TRAITS.size()] + " " + CREATURES[sample(14) % CREATURES.size()],
 			"sky": Color.from_hsv(unit(15), 0.22 + 0.20 * unit(16), 0.53 + 0.21 * unit(17)),
 			"breathable": sample(18) % 5 < 3,
-			"gravity": 590.0 + float(sample(19) % 421),
 			"relief": 0.55 + 0.9 * unit(20),
 		}
 
@@ -109,6 +118,16 @@ func _init(address: Vector2i, universe_seed: int = 0) -> void:
 		else:
 			pressure_kpa = 12 + sample(42) % 76
 		_mean_temperature = BASE_TEMPERATURES[kind] + lerpf(-10.0, 10.0, unit(45))
+
+	rock_type = sample(52) % ROCK_COMPOSITION.size()
+	radius_earth = lerpf(0.55, 2.05, unit(19))
+	density_earth = ROCK_DENSITY[rock_type] + lerpf(-0.06, 0.06, unit(48))
+	if legacy and sector == Vector2i.ZERO:
+		rock_type = 0
+		radius_earth = 1.0
+		density_earth = 1.0
+	mass_earth = density_earth * radius_earth * radius_earth * radius_earth
+	gravity_g = surface_gravity(mass_earth, radius_earth)
 
 	_day_length = 170.0 + 140.0 * unit(46)
 	_temperature_swing = lerpf(6.0, 19.0, unit(47))
@@ -132,6 +151,10 @@ func title() -> String:
 
 func chart_title() -> String:
 	return "%s  /  %d, %d" % [title(), sector.x, sector.y]
+
+
+static func surface_gravity(mass: float, radius: float) -> float:
+	return mass / (radius * radius)
 
 
 func weather_at(elapsed: float) -> String:
@@ -161,7 +184,21 @@ func temperature_at(elapsed: float, front: String) -> float:
 
 
 static func harsh_weather(front: String) -> bool:
-	return front in ["Rainstorm", "Dust storm", "Whiteout", "Dry wind", "Ashfall"]
+	return storm_wear(front) > 0.0
+
+
+static func storm_wear(front: String) -> float:
+	match front:
+		"Rainstorm", "Dry wind":
+			return 0.16
+		"Whiteout":
+			return 0.28
+		"Dust storm":
+			return 0.40
+		"Ashfall":
+			return 0.62
+		_:
+			return 0.0
 
 
 func terrain_salt() -> int:

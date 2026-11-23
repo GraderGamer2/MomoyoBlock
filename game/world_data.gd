@@ -2,7 +2,7 @@ class_name BlockWorld
 extends RefCounted
 
 enum Region { SURFACE, STATION }
-enum Block { EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL }
+enum Block { EMPTY, GRASS, SOIL, STONE, ALLOY, ORE, BEACON, SAND, SHALE, BASALT, FROSTSTONE, HULL, WORKBENCH }
 
 const CHUNK_BITS := 5
 const CHUNK_SIZE := 1 << CHUNK_BITS
@@ -17,14 +17,16 @@ const STATION_HATCH := Vector2i(STATION_CABIN.end.x, PAD_ROW - 3)
 const STATION_WORKBENCH := Vector2i(-9, PAD_ROW - 1)
 const STATION_HULL := Rect2i(-19, PAD_ROW - 7, 44, 11)
 const STATION_RESCUE_ROW := 56
+const STATION_GRAVITY_PX := 510.0
+const MATERIAL_LIMIT := 2147483647
 const BUILD_MATERIALS: Array[int] = [Block.SOIL, Block.STONE, Block.ALLOY, Block.ORE]
 const MATERIAL_NAMES: Array[String] = ["Soil", "Stone", "Alloy", "Ore"]
-const BLOCK_NAMES := ["Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone", "Pressure hull"]
-const MINING_SECONDS := [0.0, 0.30, 0.44, 1.16, 1.78, 1.60, 0.0, 0.36, 0.88, 1.66, 1.36, 2.05]
+const BLOCK_NAMES := ["Empty", "Grass", "Soil", "Stone", "Alloy", "Ore", "Beacon", "Sand", "Shale", "Basalt", "Froststone", "Pressure hull", "Workbench"]
+const MINING_SECONDS := [0.0, 0.40, 0.58, 1.48, 2.15, 1.95, 0.0, 0.48, 1.10, 2.10, 1.67, 2.55, 1.0]
 const TILE_COLORS: Array[Color] = [
 	Color.TRANSPARENT, Color("#aacea1"), Color("#856252"), Color("#50536e"),
 	Color("#6f8d9d"), Color("#60768b"), Color("#43696b"), Color("#bca474"),
-	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"),
+	Color("#64617c"), Color("#4f4152"), Color("#6a97a6"), Color("#465d72"), Color("#53736f"),
 ]
 
 var region: int
@@ -52,7 +54,7 @@ func _init(world_region: int, sector := Vector2i.ZERO, universe_seed: int = 0) -
 		_relief = planet.details.relief
 		if not planet.legacy:
 			_soil = Block.SAND if planet.kind == 1 or planet.sample(51) % 7 == 0 else Block.SOIL
-			_rock = [Block.STONE, Block.SHALE, Block.BASALT, Block.FROSTSTONE][planet.sample(52) % 4]
+			_rock = [Block.STONE, Block.SHALE, Block.BASALT, Block.FROSTSTONE][planet.rock_type]
 			_soil_depth = 3 + planet.sample(53) % 6
 			_ore_period = 23 + planet.sample(54) % 39
 			_cave_density = 2 + planet.sample(55) % 4
@@ -151,9 +153,9 @@ static func mined_material(material: int) -> int:
 	return material
 
 
-static func mining_time(material: int, has_pick: bool) -> float:
+static func mining_time(material: int, prospector: bool) -> float:
 	var seconds: float = MINING_SECONDS[material]
-	if has_pick and seconds >= 0.85:
+	if prospector and seconds >= 1.0:
 		seconds /= 1.7
 	return seconds
 

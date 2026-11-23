@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 · 2026-11-23
+
+- Derive planet gravity from seeded radius and rock composition. The HUD shows local gravity, and the star chart adds radius, mass, density, and composition. Relay Nine uses artificial gravity.
+- Give the explorer a short-range pulse tool for mining and collecting. Solid terrain blocks pulses. The starter tool has unlimited durability, and the Prospector module increases range and mining speed.
+- Add field crafting and deployable workbenches. Smelt ore, repair the suit, and craft equipment at a workbench anywhere in reach. A deployed bench can be recovered with the pulse tool.
+- Track suit integrity, air leaks, and whether the suit is equipped. Storms and high pressure wear the suit. Bare or breached suits leave the explorer exposed to local air, pressure, temperatures, and storms.
+- Preserve existing terrain and vitals on upgrade. Older suits start at full integrity, and crafted Prospector Picks become Prospector modules.
+
 ## 0.4.1 · 2026-11-22
 
 - Added a body temperature gauge with a cold-to-hot scale, Celsius reading, and feedback for exposure and recovery.

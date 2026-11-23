@@ -21,6 +21,13 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Show atmospheric pressure and temperature on the HUD and star chart. Prepare for hot, cold, and high-pressure worlds with supplies and suit equipment.
 - Track body temperature separately from outdoor temperature. Exposure builds over time, and the HUD shows when the explorer is heating up, cooling down, or recovering.
 
+## 0.5 · Field equipment and planetary gravity
+
+- Give planets seeded radii, masses, and bulk compositions that determine surface gravity. Use the same gravity value for movement and the star chart.
+- Give explorers a reusable pulse tool for short-range mining and collection. Add a craftable upgrade for range and mining speed.
+- Let players deploy and recover field workbenches, smelt ore, craft tools, and repair suits away from Relay Nine.
+- Make suit integrity matter during storms and pressure exposure. Let players remove the suit and experience local air, pressure, and temperature directly.
+
 ## Next · Habitats, storage, and ecology
 
 - Let players build sealed rooms and airlocks. Add power and oxygen equipment so habitats can support long expeditions away from the beacons.
@@ -29,9 +36,10 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 
 ## Later · Vehicles and shipbuilding
 
-- Build ground vehicles, launch vehicles, ships, and expandable stations by combining blocks, machinery, and crafted parts.
+- Build vehicles and ships by placing hull blocks, machinery, and crafted components by hand. Provide blueprints that guide manual construction or assemble and spawn a finished ship at a clear launch site once the required materials are supplied.
 - Give ships walkable interiors. Let the player leave the pilot seat and move between the cockpit, cargo bay, airlock, and life support while docked or in flight.
-- Give constructed vehicles functional power, propulsion, fuel, cargo, and life support. Connect the consequences of preparation and damage to launch, docking, and emergency returns.
+- Let players launch from a planet and reach orbit in their own ships. Compare engine thrust with local gravity and the ship's loaded mass, including cargo and fuel. Show the thrust margin, power draw, and estimated fuel cost before launch.
+- Add functional power, fuel, cargo, and life support. Make damage and how the ship is loaded affect ascent, docking, and emergency returns.
 - Add discovery and route planning across multiple systems. Grow the variety of independently generated scenery, species, climates, and hazards.
 
 ## Later · NPCs, trading, and encounters

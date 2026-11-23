@@ -27,9 +27,13 @@ func _run() -> void:
 	_expect(game.terrain.block_at(Vector2i(-4, BlockWorld.PAD_ROW)) == BlockWorld.Block.STONE,
 			"First-playtest saves keep their existing Cinder Reach edits")
 	_expect(game.survival.oxygen == 100.0 and game.survival.food == 2, "First-playtest saves gain survival defaults")
+	_check_gravity()
 	_check_survival_model()
 	_check_body_temperature()
+	_check_suit()
 	await _check_weather(game)
+	var field_bench := Vector2i(7, BlockWorld.PAD_ROW - 1)
+	_check_field_crafting(game, field_bench)
 	var start := game.explorer.position
 	Input.action_press("move_right")
 	await _frames(12)
@@ -67,7 +71,7 @@ func _run() -> void:
 	_expect(not game.advance_mining(1.0, surface_block, false), "Releasing the button cancels mining")
 	_expect(game.begin_mining(surface_block) and not game.advance_mining(0.18, surface_block, true),
 			"Returning to a cancelled block starts from zero")
-	_expect(game.advance_mining(0.15, surface_block, true) and game.inventory[0] == soil + 1,
+	_expect(game.advance_mining(0.25, surface_block, true) and game.inventory[0] == soil + 1,
 			"A completed hold breaks the block and pays out soil once")
 	_expect(not game.advance_mining(4.0, surface_block, true) and not game.begin_mining(surface_block),
 			"Continued holding cannot mine the empty cell twice")
@@ -84,6 +88,7 @@ func _run() -> void:
 	_expect(not game.begin_travel(), "An active transfer cannot be queued twice")
 	await _frames(90)
 	_expect(game.region == BlockWorld.Region.STATION, "Travel reaches the orbital station")
+	_expect(is_equal_approx(game.explorer.gravity, BlockWorld.STATION_GRAVITY_PX), "Relay Nine uses artificial gravity")
 	game.selected = 2
 	await _check_station(game)
 	game.explorer.position = BlockWorld.pad_position()
@@ -96,6 +101,8 @@ func _run() -> void:
 	await _frames(90)
 	_expect(game.region == BlockWorld.Region.SURFACE, "The return trip reaches the surface")
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.SOIL, "Surface edits outlast a trip")
+	game.survival.suit_integrity = 47.5
+	_expect(game.toggle_suit(), "The explorer can remove the suit near a beacon")
 	game.survival.body_temperature = 38.7
 	_expect(game.save_expedition(), "The expedition saves")
 	game.queue_free()
@@ -105,7 +112,11 @@ func _run() -> void:
 	await _frames(5)
 	_expect(game.region == BlockWorld.Region.SURFACE, "Reopening restores the last region")
 	_expect(game.inventory[2] == alloy - 1 and game.selected == 2, "Reopening restores inventory and selection")
-	_expect(game.kit.pick and game.kit.liner and game.kit.canisters == 1, "Reopening restores crafted equipment")
+	_expect(game.kit.prospector and game.kit.liner and game.kit.canisters == 1, "Reopening restores crafted equipment")
+	_expect(game.terrain.block_at(field_bench) == BlockWorld.Block.WORKBENCH, "A deployed workbench persists through travel and saves")
+	_expect(not game.survival.suit_equipped and is_equal_approx(game.survival.suit_integrity, 47.5),
+			"Reopening restores the suit's integrity and whether it is worn")
+	_expect(game.toggle_suit() and game.survival.suit_active(), "The explorer can put the damaged suit back on")
 	var temperature := game.find_child("BodyTemperature", true, false) as Label
 	_expect(is_equal_approx(game.survival.body_temperature, 38.7) and temperature.text == "38.7 °C · Recovering",
 			"The saved body temperature and recovery reading return at the beacon")
@@ -123,11 +134,20 @@ func _run() -> void:
 	var before := game.survival.oxygen
 	await _frames(32)
 	_expect(game.survival.oxygen < before, "The EVA deck uses suit oxygen")
+	_expect(game.toggle_suit(), "The suit can be removed on the EVA deck")
+	var health := game.survival.health
+	var tank := game.survival.oxygen
+	await _frames(32)
+	_expect(game.survival.health < health and is_equal_approx(game.survival.oxygen, tank),
+			"Vacuum injures an unsuited explorer while their disconnected tank retains its air")
+	_expect(game.toggle_suit(), "The suit can be put on again on the EVA deck")
 	game.explorer.position = BlockWorld.pad_position()
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.land_at(Vector2i.RIGHT), "The star chart accepts a different sector at the beacon")
 	await _frames(90)
 	_expect(game.sector == Vector2i.RIGHT and game.region == BlockWorld.Region.SURFACE, "Chart travel reaches a generated planet")
+	_expect(is_equal_approx(game.explorer.gravity, game.surface.planet.gravity_g * PlanetProfile.EARTH_GRAVITY_PX),
+			"The destination's derived surface gravity drives the physics controller")
 	_expect(not game.surface.planet.details.breathable, "The first destination requires suit oxygen")
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.EMPTY, "Edits belong to the planet where they were made")
 	var foreign_block := Vector2i(1, BlockWorld.PAD_ROW - 2)
@@ -222,23 +242,40 @@ func _check_menu() -> void:
 	await get_tree().process_frame
 
 
+func _check_gravity() -> void:
+	_expect(is_equal_approx(PlanetProfile.surface_gravity(8.0, 2.0), 2.0),
+			"Doubling radius at Earth density gives eight times the mass and twice the surface gravity")
+	var low := INF
+	var high := 0.0
+	for i in 36:
+		var sector := Vector2i(i * 29 - 600, 7)
+		var planet := PlanetProfile.new(sector, 53289)
+		var same := PlanetProfile.new(sector, 53289)
+		_expect(planet.gravity_g == same.gravity_g and is_equal_approx(planet.gravity_g, planet.density_earth * planet.radius_earth),
+				"Seeded gravity is repeatable and follows the planet's radius and density")
+		low = minf(low, planet.gravity_g)
+		high = maxf(high, planet.gravity_g)
+	_expect(low < 0.6 and high > 1.6, "Generated worlds have distinct surface gravity")
+
+
 func _check_survival_model() -> void:
 	var suit := SurvivalState.new()
-	suit.advance(10.0, false, false)
+	suit.advance(10.0, false, 0.0)
 	_expect(is_equal_approx(suit.oxygen, 89.0) and suit.hunger < 100.0 and suit.thirst < 100.0,
 			"Suit oxygen drains at the gentler vacuum rate")
 	_expect(suit.eat() and suit.drink() and suit.hunger == 100.0 and suit.thirst == 100.0, "Food and drinking water restore vitals")
 	suit.oxygen = 0
-	suit.advance(1.0, false, true)
+	suit.advance(1.0, false, PlanetProfile.storm_wear("Dust storm"))
 	_expect(is_equal_approx(suit.health, 96.0), "Empty oxygen uses the lower health penalty")
-	suit.advance(7.0, true, false)
+	suit.advance(7.0, true, 0.0)
 	_expect(suit.oxygen == 100.0, "Breathable air replenishes the suit")
 	var exposed := SurvivalState.new()
 	var protected := SurvivalState.new()
-	exposed.advance(10.0, false, false, 226, 56.0)
-	protected.advance(10.0, false, false, 226, 56.0, true)
+	exposed.advance(10.0, false, 0.0, 226, 56.0)
+	protected.advance(10.0, false, 0.0, 226, 56.0, true)
 	_expect(exposed.health < protected.health and protected.health < 100.0 and exposed.thirst < suit.thirst,
 			"Dense air causes suit strain, heat increases thirst, and the liner reduces pressure damage")
+	_expect(protected.suit_integrity > exposed.suit_integrity, "The liner reduces suit wear under high pressure")
 	var gear := ExpeditionKit.new()
 	gear.canisters = 1
 	suit.oxygen = 22.0
@@ -246,7 +283,7 @@ func _check_survival_model() -> void:
 			"A spare canister restores 45 oxygen and is consumed")
 	_expect(BlockWorld.mining_time(BlockWorld.Block.HULL, false) > BlockWorld.mining_time(BlockWorld.Block.STONE, false) and
 			BlockWorld.mining_time(BlockWorld.Block.STONE, true) < BlockWorld.mining_time(BlockWorld.Block.STONE, false),
-			"Block hardness differs and the pick speeds up solid material")
+			"Block hardness differs and the Prospector module speeds up solid material")
 	var origin := PlanetProfile.new(Vector2i.ZERO)
 	_expect(origin.weather_at(12.0).is_empty() and origin.weather_at(55.0) == "Rain", "Planet weather moves through a cycle")
 	var address := Vector2i(-2147483648, 2147483647)
@@ -259,20 +296,20 @@ func _check_body_temperature() -> void:
 	var hot := SurvivalState.new()
 	var cold := SurvivalState.new()
 	var storm := SurvivalState.new()
-	hot.advance(5.0, true, false, SurvivalState.CABIN_PRESSURE, 72.0)
-	cold.advance(5.0, true, false, SurvivalState.CABIN_PRESSURE, -45.0)
-	storm.advance(5.0, true, true, SurvivalState.CABIN_PRESSURE, -45.0)
+	hot.advance(5.0, true, 0.0, SurvivalState.CABIN_PRESSURE, 72.0)
+	cold.advance(5.0, true, 0.0, SurvivalState.CABIN_PRESSURE, -45.0)
+	storm.advance(5.0, true, PlanetProfile.storm_wear("Whiteout"), SurvivalState.CABIN_PRESSURE, -45.0)
 	_expect(hot.body_temperature > 37.0 and cold.body_temperature < 37.0 and
 			hot.health == 100.0 and cold.health == 100.0, "Brief exposure changes body temperature without damaging health")
 	_expect(storm.body_temperature < cold.body_temperature, "Unshielded storms increase exposure")
 	for _tick in 240:
-		hot.advance(SurvivalState.TICK, true, false, SurvivalState.CABIN_PRESSURE, 72.0)
-		cold.advance(SurvivalState.TICK, true, false, SurvivalState.CABIN_PRESSURE, -45.0)
+		hot.advance(SurvivalState.TICK, true, 0.0, SurvivalState.CABIN_PRESSURE, 72.0)
+		cold.advance(SurvivalState.TICK, true, 0.0, SurvivalState.CABIN_PRESSURE, -45.0)
 	_expect(hot.body_temperature > SurvivalState.HEAT_STRESS_TEMPERATURE and hot.health < 100.0 and
 			cold.body_temperature < SurvivalState.COLD_STRESS_TEMPERATURE and cold.health < 100.0,
 			"Prolonged exposure to heat or cold damages health")
 	var before := hot.body_temperature
-	hot.advance(15.0, true, false)
+	hot.advance(15.0, true, 0.0)
 	_expect(hot.body_temperature < before and hot.body_temperature > 37.0,
 			"Normal conditions recover body temperature gradually")
 	cold.restore_after_rescue()
@@ -280,6 +317,72 @@ func _check_body_temperature() -> void:
 	var invalid := cold.snapshot()
 	invalid["body_temperature"] = NAN
 	_expect(not SurvivalState.valid_snapshot(invalid), "A non-finite saved body temperature is rejected")
+
+
+func _check_suit() -> void:
+	var sealed := SurvivalState.new()
+	var worn := SurvivalState.new()
+	worn.suit_integrity = 30.0
+	sealed.advance(5.0, false, 0.0, 0)
+	worn.advance(5.0, false, 0.0, 0)
+	_expect(worn.oxygen < sealed.oxygen and worn.suit_integrity == 30.0, "A worn suit leaks air during EVA")
+
+	var bare := SurvivalState.new()
+	bare.suit_equipped = false
+	bare.advance(5.0, true, 0.0)
+	_expect(bare.health == 100.0 and not bare.suit_active(), "Mild, breathable air is safe without a suit")
+	var ash := PlanetProfile.storm_wear("Ashfall")
+	var storm := SurvivalState.new()
+	storm.advance(5.0, true, ash, SurvivalState.CABIN_PRESSURE, 72.0)
+	bare.advance(5.0, true, ash, SurvivalState.CABIN_PRESSURE, 72.0)
+	_expect(storm.suit_integrity < 100.0 and bare.health < storm.health and bare.body_temperature > storm.body_temperature,
+			"Ash wears out a suit and causes more heat and direct damage without protection")
+	storm.suit_integrity = 0.5
+	storm.advance(1.0, false, ash, 220)
+	_expect(not storm.suit_active() and storm.health < 90.0, "A suit breach exposes the explorer to unsafe air and pressure")
+	storm.restore_after_rescue()
+	_expect(storm.suit_active() and storm.suit_integrity == SurvivalState.RESCUE_SUIT_INTEGRITY,
+			"Rescue restores a minimally working suit")
+
+
+func _check_field_crafting(game: MomoyoGame, bench: Vector2i) -> void:
+	game.explorer.position = Vector2(150.0, BlockWorld.pad_position().y)
+	game.explorer.velocity = Vector2.ZERO
+	var before := game.inventory.duplicate()
+	_expect(game.workbench_name().is_empty() and not game.craft(ExpeditionKit.Recipe.SMELT),
+			"Advanced crafting requires a nearby bench")
+	_expect(game.craft(ExpeditionKit.Recipe.WORKBENCH) and game.kit.workbenches == 1 and
+			game.inventory[0] == before[0] - 2 and game.inventory[1] == before[1] - 4,
+			"Field crafting produces a workbench from soil and stone")
+	game.selected = game.inventory.size()
+	_expect(game.place(bench) and game.workbench_name() == "Field workbench" and game.kit.workbenches == 0,
+			"Slot five deploys a functional workbench away from the landing beacon")
+
+	var ore := bench + Vector2i.RIGHT
+	game.terrain.set_block(ore, BlockWorld.Block.ORE)
+	_expect(not game.begin_mining(ore), "The starter pulse cannot harvest ore beyond its range")
+	game.kit.prospector = true
+	_expect(not game.begin_mining(ore), "A solid block stops an otherwise in-range pulse")
+	_expect(game.begin_mining(bench) and game.advance_mining(1.1, bench, true) and game.kit.workbenches == 1,
+			"Mining recovers a deployed bench for reuse")
+	_expect(game.save_expedition(false), "Carried workbenches and their selection can be saved")
+	var state := ExpeditionSave.new().read()
+	_expect(state.get("selected") == game.inventory.size() and state.get("kit", {}).get("workbenches") == 1,
+			"Save restores a carried workbench and the fifth slot")
+	for _shot in 2:
+		_expect(game.begin_mining(ore) and game.advance_mining(2.0, ore, true), "The upgraded pulse reaches and collects ore")
+		if game.inventory[3] < 2:
+			game.terrain.set_block(ore, BlockWorld.Block.ORE)
+	game.kit.prospector = false
+	_expect(game.place(bench), "Recovered workbenches can be redeployed")
+	_expect(game.craft(ExpeditionKit.Recipe.SMELT) and game.inventory[3] == before[3] and
+			game.inventory[2] == before[2] + ExpeditionKit.ALLOY_YIELD, "The field workbench smelts mined ore")
+	game.survival.suit_integrity = 0.0
+	_expect(game.craft(ExpeditionKit.Recipe.REPAIR) and game.survival.suit_active() and game.inventory[2] == before[2],
+			"Smelted alloy repairs a breached suit at the field workbench")
+	game.selected = 0
+	game.explorer.position = BlockWorld.pad_position()
+	game.explorer.velocity = Vector2.ZERO
 
 
 func _check_station(game: MomoyoGame) -> void:
@@ -292,7 +395,7 @@ func _check_station(game: MomoyoGame) -> void:
 	_expect(game.begin_mining(wall), "A hull block can be targeted up close")
 	_expect(not game.advance_mining(1.0, wall, true), "The hull takes longer to break than grass")
 	_expect(not game.advance_mining(3.0, wall + Vector2i.UP, true), "Switching targets cancels mining")
-	_expect(game.begin_mining(wall) and game.advance_mining(2.2, wall, true), "Holding breaks a hull block at its hardness threshold")
+	_expect(game.begin_mining(wall) and game.advance_mining(2.6, wall, true), "Holding breaks a hull block at its hardness threshold")
 	_expect(not game.breathable_here() and not game.station.station_cabin_sealed(), "A hull breach vents the cabin")
 	_expect(game.place(wall) and game.breathable_here(), "An alloy patch restores the cabin")
 
@@ -300,10 +403,12 @@ func _check_station(game: MomoyoGame) -> void:
 	game.explorer.velocity = Vector2.ZERO
 	await _frames(5)
 	var before := game.inventory.duplicate()
-	_expect(game.can_craft_here() and game.craft(ExpeditionKit.Recipe.PICK), "The workbench crafts a pick")
+	_expect(game.workbench_name() == "Relay Nine workshop" and game.craft(ExpeditionKit.Recipe.PROSPECTOR),
+			"The station workshop crafts the Prospector module")
 	_expect(game.inventory[1] == before[1] - 4 and game.inventory[2] == before[2] - 2,
 			"Crafting deducts the listed materials")
-	_expect(not game.craft(ExpeditionKit.Recipe.PICK), "An equipped pick cannot cost resources again")
+	_expect(not game.craft(ExpeditionKit.Recipe.PROSPECTOR), "An installed module cannot cost resources again")
+	game.inventory[1] += 2
 	game.inventory[3] += 3
 	_expect(game.craft(ExpeditionKit.Recipe.CANISTER) and game.craft(ExpeditionKit.Recipe.LINER), "Craftable air and pressure gear are available")
 	_expect(not game.use_air_canister(), "A full oxygen tank does not waste a canister")
@@ -369,6 +474,8 @@ func _check_previous_format() -> void:
 	var sector := Vector2i.RIGHT
 	var old_vitals := SurvivalState.new().snapshot()
 	old_vitals.erase("body_temperature")
+	old_vitals.erase("suit_equipped")
+	old_vitals.erase("suit_integrity")
 	old.store_var({
 		"format": 2, "world_revision": 1, "region": BlockWorld.Region.STATION, "sector": sector,
 		"position": BlockWorld.pad_position(), "inventory": PackedInt32Array([12, 8, 30, 0]), "selected": 0,
@@ -399,11 +506,21 @@ func _check_previous_format() -> void:
 			updated.position = workbench
 			updated.kit = {"pick": true, "liner": false, "canisters": 2}
 			updated.vitals.erase("body_temperature")
+			updated.vitals.erase("suit_equipped")
+			updated.vitals.erase("suit_integrity")
 			_expect(previous.write(updated) == OK, "A 0.4 fixture can be written")
 			var game := _open_game()
 			_expect(game.region == BlockWorld.Region.STATION and game.explorer.position == workbench and
-					game.kit.pick and game.kit.canisters == 2 and game.survival.body_temperature == 37.0,
+					game.kit.prospector and game.kit.canisters == 2 and game.survival.body_temperature == 37.0,
 					"A 0.4 station save gains normal body temperature and keeps its position and equipment")
+			game.free()
+			updated.format = ExpeditionSave.TEMPERATURE_FORMAT
+			updated.vitals["body_temperature"] = 38.4
+			_expect(previous.write(updated) == OK, "A 0.4.1 fixture can be written")
+			game = _open_game()
+			_expect(game.kit.prospector and game.explorer.position == workbench and
+					is_equal_approx(game.survival.body_temperature, 38.4) and game.survival.suit_integrity == 100.0,
+					"0.4.1 upgrades the old pick and adds a clean suit without resetting existing vitals")
 			game.free()
 
 

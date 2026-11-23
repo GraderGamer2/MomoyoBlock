@@ -6,7 +6,10 @@ signal workshop_requested
 
 const REACH := 2.0 * BlockWorld.TILE_SIZE
 const REACH_SQUARED := REACH * REACH
+const WORKBENCH_REACH := 54.0
 const BEACON_RANGE_SQUARED := 54.0 * 54.0
+const PULSE_INTERVAL := 0.22
+const PULSE_FLASH_TIME := 0.08
 const CURSOR_VALID := Color("#f9d688")
 const CURSOR_OUTSIDE := Color(0.91, 0.94, 0.97, 0.3)
 
@@ -32,12 +35,14 @@ var _mine_cell := Vector2i.ZERO
 var _mine_material := BlockWorld.Block.EMPTY
 var _mine_time := 0.0
 var _mine_elapsed := 0.0
+var _pulse_left := 0.0
 
 @onready var terrain: ActiveTerrain = $Terrain
 @onready var explorer: Explorer = $Explorer
 @onready var _camera: Camera2D = $Explorer/Camera
 @onready var _cursor: Line2D = $Target
 @onready var _mine_progress: ProgressBar = $Target/MiningProgress
+@onready var _pulse: Line2D = $ToolPulse
 @onready var _wildlife: SurfaceWildlife = $Wildlife
 @onready var _sky: Horizon = $Backdrop/Sky
 @onready var _beacon: Node2D = $Beacon
@@ -76,7 +81,7 @@ func _ready() -> void:
 		_load_planet(Vector2i.ZERO)
 		_hud.show_status("Existing save could not be loaded. It has been kept.", false)
 	_open_region(region, point, origin)
-	_hud.show_inventory(inventory, selected)
+	_show_inventory()
 	if state.is_empty() and _save.read_error == OK and not save_expedition(false):
 		_hud.show_status("Could not save the new expedition. Press F5 to retry.", false)
 
@@ -84,10 +89,15 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if _in_transit:
 		return
+	if _pulse_left > 0.0:
+		_pulse_left = maxf(0.0, _pulse_left - delta)
+		if _pulse_left == 0.0:
+			_pulse.hide()
 	var rebased := _rebase_explorer()
 	var cell := terrain.world_cell(explorer.position)
 	if region == BlockWorld.Region.STATION and cell.y >= BlockWorld.STATION_RESCUE_ROW:
 		survival.health = maxf(0.0, survival.health - 25.0)
+		survival.damage_suit(20.0)
 		if survival.health == 0.0:
 			_rescue()
 		else:
@@ -98,9 +108,10 @@ func _physics_process(delta: float) -> void:
 	_wildlife.follow(cell.x, rebased)
 	if _near_beacon != _at_beacon():
 		_update_travel()
-	_update_target()
+	var aim := terrain.world_cell(get_global_mouse_position())
+	_update_target(aim)
 	if _mine_time > 0.0:
-		advance_mining(delta, terrain.world_cell(get_global_mouse_position()), Input.is_action_pressed("mine"))
+		advance_mining(delta, aim, Input.is_action_pressed("mine"))
 
 	_tick_progress += delta
 	if _tick_progress >= SurvivalState.TICK:
@@ -121,10 +132,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("star_chart") and can_choose_planet():
 		chart_requested.emit()
 	elif event.is_action_pressed("workshop"):
-		if can_craft_here():
-			workshop_requested.emit()
-		else:
-			_hud.show_status("Get close to the beacon or Relay Nine workbench", false)
+		workshop_requested.emit()
+	elif event.is_action_pressed("toggle_suit"):
+		toggle_suit()
 	elif event.is_action_pressed("air_canister"):
 		use_air_canister()
 	elif event.is_action_pressed("gather"):
@@ -144,9 +154,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("place"):
 		place(terrain.world_cell(get_global_mouse_position()))
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_4:
+		if event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_5:
 			selected = event.physical_keycode - KEY_1
-			_hud.show_inventory(inventory, selected)
+			_show_inventory()
 
 
 func _notification(what: int) -> void:
@@ -156,72 +166,113 @@ func _notification(what: int) -> void:
 
 func begin_mining(cell: Vector2i) -> bool:
 	cancel_mining()
-	if _in_transit or not _within_reach(cell):
-		_feedback_on_distant_action(cell)
+	var pulse_reach := kit.pulse_reach_squared()
+	if _in_transit or not _within_reach(cell, pulse_reach):
+		_feedback_on_distant_action(cell, pulse_reach)
 		return false
 	var material := terrain.block_at(cell)
-	var slot := BlockWorld.BUILD_MATERIALS.find(BlockWorld.mined_material(material))
-	if slot < 0 or inventory[slot] == 2147483647:
+	if material == BlockWorld.Block.WORKBENCH:
+		if kit.workbenches >= ExpeditionKit.MAX_WORKBENCHES:
+			_hud.show_status("Workbench inventory is full", false)
+			return false
+	else:
+		var slot := BlockWorld.BUILD_MATERIALS.find(BlockWorld.mined_material(material))
+		if slot < 0 or inventory[slot] == BlockWorld.MATERIAL_LIMIT:
+			return false
+	if not terrain.pulse_path_clear(explorer.position, cell):
+		_hud.show_status("Terrain blocked the pulse", false)
 		return false
 	_mine_cell = cell
 	_mine_material = material
-	_mine_time = BlockWorld.mining_time(material, kit.pick)
+	_mine_time = BlockWorld.mining_time(material, kit.prospector)
 	_mine_progress.value = 0.0
 	_mine_progress.show()
 	_hud.show_mining(BlockWorld.BLOCK_NAMES[material], _mine_time)
+	_flash_pulse(cell)
 	return true
 
 
 func advance_mining(delta: float, aim: Vector2i, held: bool) -> bool:
 	if _mine_time == 0.0:
 		return false
-	if not held or aim != _mine_cell or not _within_reach(_mine_cell) or terrain.block_at(_mine_cell) != _mine_material:
+	if not held or aim != _mine_cell or not _within_reach(_mine_cell, kit.pulse_reach_squared()) \
+			or terrain.block_at(_mine_cell) != _mine_material or not terrain.pulse_path_clear(explorer.position, _mine_cell):
 		cancel_mining()
 		return false
+	var previous_pulse := int(_mine_elapsed / PULSE_INTERVAL)
 	_mine_elapsed += delta
 	if _mine_elapsed < _mine_time:
 		_mine_progress.value = _mine_elapsed / _mine_time
+		if previous_pulse != int(_mine_elapsed / PULSE_INTERVAL):
+			_flash_pulse(_mine_cell)
 		return false
 
-	var slot := BlockWorld.BUILD_MATERIALS.find(BlockWorld.mined_material(_mine_material))
 	var cell := _mine_cell
+	var material := _mine_material
 	cancel_mining()
+	_flash_pulse(cell)
 	terrain.set_block(cell, BlockWorld.Block.EMPTY)
-	inventory[slot] += 1
-	_hud.show_inventory(inventory, selected)
+	if material == BlockWorld.Block.WORKBENCH:
+		kit.workbenches += 1
+		_hud.show_status("Workbench recovered")
+	else:
+		var slot := BlockWorld.BUILD_MATERIALS.find(BlockWorld.mined_material(material))
+		inventory[slot] += 1
+	_show_inventory()
 	_on_block_changed(cell)
 	return true
 
 
 func cancel_mining() -> void:
-	if _mine_time <= 0.0:
-		return
-	_mine_time = 0.0
-	_mine_elapsed = 0.0
-	_mine_progress.hide()
-	_hud.hide_mining()
+	if _mine_time > 0.0:
+		_mine_time = 0.0
+		_mine_elapsed = 0.0
+		_mine_progress.hide()
+		_hud.hide_mining()
+	_clear_pulse()
+
+
+func _flash_pulse(cell: Vector2i) -> void:
+	var aim := terrain.scene_point(cell, ActiveTerrain.CELL_CENTER)
+	_pulse.set_point_position(0, explorer.aim_tool_at(aim))
+	_pulse.set_point_position(1, aim)
+	_pulse_left = PULSE_FLASH_TIME
+	_pulse.show()
+
+
+func _clear_pulse() -> void:
+	if _pulse_left > 0.0:
+		_pulse.hide()
+		_pulse_left = 0.0
 
 
 func place(cell: Vector2i) -> bool:
-	if not _within_reach(cell):
+	if _in_transit or not _within_reach(cell):
 		_feedback_on_distant_action(cell)
 		return false
-	if terrain.block_at(cell) != BlockWorld.Block.EMPTY or inventory[selected] <= 0:
+	var deploy_bench := selected == inventory.size()
+	var count := kit.workbenches if deploy_bench else inventory[selected]
+	if terrain.block_at(cell) != BlockWorld.Block.EMPTY or count <= 0:
 		return false
 	var tile_rect := Rect2(terrain.scene_point(cell), Vector2.ONE * BlockWorld.TILE_SIZE)
 	if tile_rect.intersects(explorer.body_rect()):
 		return false
-	terrain.set_block(cell, BlockWorld.BUILD_MATERIALS[selected])
-	inventory[selected] -= 1
-	_hud.show_inventory(inventory, selected)
+	var material := BlockWorld.Block.WORKBENCH if deploy_bench else BlockWorld.BUILD_MATERIALS[selected]
+	terrain.set_block(cell, material)
+	if deploy_bench:
+		kit.workbenches -= 1
+		_hud.show_status("Workbench deployed")
+	else:
+		inventory[selected] -= 1
+	_show_inventory()
 	_on_block_changed(cell)
 	return true
 
 
 func gather_nearby() -> bool:
-	var cell: Variant = terrain.nearest_forage(explorer.position, REACH_SQUARED)
+	var cell: Variant = terrain.nearest_forage(explorer.position, kit.pulse_reach_squared())
 	if cell == null:
-		_hud.show_status("No food or water within reach", false)
+		_hud.show_status("No food or water in pulse range", false)
 		return false
 	if terrain.forage.markers[cell] == 1:
 		if survival.food >= SurvivalState.MAX_SUPPLIES:
@@ -235,6 +286,7 @@ func gather_nearby() -> bool:
 			return false
 		survival.water += 1
 		_hud.show_status("Gathered %s" % surface.planet.details.water)
+	_flash_pulse(cell)
 	terrain.harvest(cell)
 	_update_survival_display()
 	return true
@@ -248,24 +300,42 @@ func breathable_here() -> bool:
 	return surface.planet.details.breathable
 
 
-func can_craft_here() -> bool:
-	if _in_transit:
-		return false
-	if region == BlockWorld.Region.SURFACE:
-		return _at_beacon()
-	var workbench := terrain.scene_point(BlockWorld.STATION_WORKBENCH, ActiveTerrain.CELL_CENTER)
-	return explorer.position.distance_squared_to(workbench) <= BEACON_RANGE_SQUARED
+func workbench_name() -> String:
+	if region == BlockWorld.Region.SURFACE and _at_beacon():
+		return "Beacon workbench"
+	if region == BlockWorld.Region.STATION:
+		var workbench := terrain.scene_point(BlockWorld.STATION_WORKBENCH, ActiveTerrain.CELL_CENTER)
+		if explorer.position.distance_squared_to(workbench) <= BEACON_RANGE_SQUARED:
+			return "Relay Nine workshop"
+	if terrain.has_block_near(explorer.position, BlockWorld.Block.WORKBENCH, WORKBENCH_REACH):
+		return "Field workbench"
+	return ""
 
 
 func craft(recipe: int) -> bool:
-	if not can_craft_here() or not kit.craft(recipe, inventory):
+	if _in_transit or (recipe != ExpeditionKit.Recipe.WORKBENCH and workbench_name().is_empty()):
 		return false
-	_hud.show_inventory(inventory, selected)
+	if not kit.craft(recipe, inventory, survival):
+		return false
+	_show_inventory()
+	_update_survival_display()
+	return true
+
+
+func toggle_suit() -> bool:
+	if not survival.suit_equipped and survival.suit_integrity == 0.0:
+		_hud.show_status("Repair the suit at a workbench", false)
+		return false
+	survival.suit_equipped = not survival.suit_equipped
+	_hud.show_status("Suit equipped" if survival.suit_equipped else "Suit removed", survival.suit_equipped)
 	_update_survival_display()
 	return true
 
 
 func use_air_canister() -> bool:
+	if not survival.suit_active():
+		_hud.show_status("Equip a working suit to use spare air", false)
+		return false
 	if not kit.use_canister(survival):
 		_hud.show_status("No spare air canisters" if kit.canisters == 0 else "Oxygen is full", false)
 		return false
@@ -343,7 +413,8 @@ func _open_region(next_region: int, point: Vector2, origin := Vector2i.ZERO) -> 
 	region = next_region
 	explorer.position = point
 	explorer.velocity = Vector2.ZERO
-	explorer.gravity = surface.planet.details.gravity if region == BlockWorld.Region.SURFACE else 510.0
+	explorer.gravity = surface.planet.gravity_g * PlanetProfile.EARTH_GRAVITY_PX \
+			if region == BlockWorld.Region.SURFACE else BlockWorld.STATION_GRAVITY_PX
 	explorer.force_update_transform()
 	terrain.open_region(surface if region == BlockWorld.Region.SURFACE else station, point, origin)
 	_update_beacon()
@@ -364,7 +435,7 @@ func _rescue() -> void:
 		inventory[slot] >>= 1
 	survival.restore_after_rescue()
 	_open_region(region, _arrival_point(region))
-	_hud.show_inventory(inventory, selected)
+	_show_inventory()
 	save_expedition(false)
 	_hud.show_status("Rescued at the beacon. Half your blocks were lost.", false)
 
@@ -377,8 +448,8 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var elapsed := survival.elapsed + seconds
 	var front := _weather_name(elapsed)
 	var on_surface := region == BlockWorld.Region.SURFACE
-	var harsh := PlanetProfile.harsh_weather(front)
-	var sheltered := harsh and _under_cover()
+	var storm_wear := PlanetProfile.storm_wear(front)
+	var sheltered := storm_wear > 0.0 and _under_cover()
 	var pressure := surface.planet.pressure_kpa if on_surface else 0
 	# The suit regulates temperature in orbit. On a planet it is exposed to the local climate.
 	var outside_temperature := surface.planet.temperature_at(elapsed, front) if on_surface else SurvivalState.CABIN_TEMPERATURE
@@ -391,7 +462,7 @@ func _update_survival_display(seconds := 0.0) -> void:
 	if controlled:
 		pressure = SurvivalState.CABIN_PRESSURE
 		temperature = SurvivalState.CABIN_TEMPERATURE
-		air = "Beacon air refill" if at_beacon and (on_surface or not _station_sealed) else "Cabin air"
+		air = "Beacon shelter" if at_beacon and (on_surface or not _station_sealed) else "Cabin air"
 	elif inside:
 		air = "Hull breach · suit oxygen"
 	elif pressure > SurvivalState.SUIT_PRESSURE_LIMIT:
@@ -399,11 +470,18 @@ func _update_survival_display(seconds := 0.0) -> void:
 	elif sheltered:
 		air += " · Under cover"
 	if seconds > 0.0:
-		survival.advance(seconds, breathable, harsh and not sheltered, pressure, temperature, kit.liner)
+		survival.advance(seconds, breathable, 0.0 if controlled or sheltered else storm_wear, pressure, temperature, kit.liner)
 		if survival.health == 0.0:
 			_rescue()
 			return
 
+	if not survival.suit_active():
+		if not breathable:
+			air = "No breathable air"
+		air += " · Suit breached" if survival.suit_equipped else " · Suit off"
+	elif not breathable and survival.suit_integrity < SurvivalState.SUIT_LEAK_START:
+		air = "Suit leaking air"
+	explorer.show_suit(survival.suit_equipped, survival.suit_integrity == 0.0)
 	_weather.set_front(front, surface.planet.wind)
 	var weather_text := front if not front.is_empty() else "Clear"
 	var environment := "%d kPa · %d °C" % [pressure, roundi(temperature)] if pressure > 0 else "Vacuum"
@@ -468,6 +546,7 @@ func _rebase_explorer() -> bool:
 	if shift == Vector2.ZERO:
 		return false
 	explorer.position -= shift
+	_clear_pulse()
 	explorer.force_update_transform()
 	_camera.reset_smoothing()
 	_camera.force_update_scroll()
@@ -493,22 +572,28 @@ func _update_travel() -> void:
 	_near_beacon = _at_beacon()
 	var direction := Vector2i(0, BlockWorld.PAD_ROW - 1) - terrain.world_cell(explorer.position)
 	_hud.show_travel(region, _near_beacon, surface.planet.title(), direction)
-	_hud.show_workshop(can_craft_here(), region)
+	_hud.show_workshop(workbench_name())
 
 
-func _within_reach(cell: Vector2i) -> bool:
-	return terrain.is_editable(cell) and explorer.position.distance_squared_to(terrain.scene_point(cell, ActiveTerrain.CELL_CENTER)) <= REACH_SQUARED
+func _show_inventory() -> void:
+	_hud.show_inventory(inventory, selected, kit.workbenches)
 
 
-func _feedback_on_distant_action(cell: Vector2i) -> void:
-	if explorer.position.distance_squared_to(terrain.scene_point(cell, ActiveTerrain.CELL_CENTER)) > REACH_SQUARED:
+func _within_reach(cell: Vector2i, reach_squared := REACH_SQUARED) -> bool:
+	return terrain.is_editable(cell) and explorer.position.distance_squared_to(terrain.scene_point(cell, ActiveTerrain.CELL_CENTER)) <= reach_squared
+
+
+func _feedback_on_distant_action(cell: Vector2i, reach_squared := REACH_SQUARED) -> void:
+	if explorer.position.distance_squared_to(terrain.scene_point(cell, ActiveTerrain.CELL_CENTER)) > reach_squared:
 		_hud.show_status("Move closer to reach that block", false)
 
 
-func _update_target() -> void:
-	var cell := terrain.world_cell(get_global_mouse_position())
+func _update_target(cell: Vector2i) -> void:
 	var point := terrain.scene_point(cell)
-	var tint := CURSOR_VALID if _within_reach(cell) else CURSOR_OUTSIDE
+	var occupied := terrain.block_at(cell) != BlockWorld.Block.EMPTY
+	var reachable := _within_reach(cell, kit.pulse_reach_squared() if occupied else REACH_SQUARED)
+	var clear_path := reachable and (not occupied or terrain.pulse_path_clear(explorer.position, cell))
+	var tint := CURSOR_VALID if clear_path else CURSOR_OUTSIDE
 	if _cursor.position != point:
 		_cursor.position = point
 	if _cursor.default_color != tint:

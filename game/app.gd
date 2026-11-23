@@ -226,23 +226,37 @@ func _leave_settings() -> void:
 
 
 func show_workshop() -> void:
-	if game == null or not game.can_craft_here():
+	if game == null:
 		return
 	screen = Screen.WORKSHOP
 	get_tree().paused = true
-	var caption := "Beacon workbench" if game.region == BlockWorld.Region.SURFACE else "Relay Nine workshop"
-	var body := _ui.open_panel(caption, "Craft equipment for the expedition.")
+	var workbench := game.workbench_name()
+	var in_field := workbench.is_empty()
+	var caption := "Field crafting" if in_field else workbench
+	var subtitle := "Deploy a workbench to unlock equipment and repairs." if in_field else "Craft equipment and service your suit."
+	var body := _ui.open_panel(caption, subtitle)
+	var recipes := GridContainer.new()
+	recipes.columns = 1 if in_field else 2
+	recipes.add_theme_constant_override("h_separation", 14)
+	recipes.add_theme_constant_override("v_separation", 11)
+	body.add_child(recipes)
 	for recipe in ExpeditionKit.RECIPES.size():
+		if in_field and recipe != ExpeditionKit.Recipe.WORKBENCH:
+			continue
 		var data: Dictionary = ExpeditionKit.RECIPES[recipe]
-		body.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
+		var card := VBoxContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_constant_override("separation", 3)
+		recipes.add_child(card)
+		card.add_child(_ui.label(data.benefit, 13, ShellUI.MUTED))
 		var entry := "%s  ·  %s" % [data.name, ExpeditionKit.cost_text(recipe)]
-		if recipe == ExpeditionKit.Recipe.PICK and game.kit.pick or recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
+		if recipe == ExpeditionKit.Recipe.PROSPECTOR and game.kit.prospector or recipe == ExpeditionKit.Recipe.LINER and game.kit.liner:
 			entry = "%s  ·  Equipped" % data.name
 		if recipe == ExpeditionKit.Recipe.CANISTER:
 			entry += "  ·  %d/%d" % [game.kit.canisters, ExpeditionKit.MAX_CANISTERS]
 		var craft_button := _ui.button(entry, _craft.bind(recipe))
-		craft_button.disabled = not game.kit.available(recipe, game.inventory)
-		body.add_child(craft_button)
+		craft_button.disabled = not game.kit.available(recipe, game.inventory, game.survival)
+		card.add_child(craft_button)
 	var supplies := PackedStringArray()
 	for i in game.inventory.size():
 		supplies.append("%d %s" % [game.inventory[i], BlockWorld.MATERIAL_NAMES[i].to_lower()])
@@ -255,7 +269,15 @@ func show_workshop() -> void:
 func _craft(recipe: int) -> void:
 	if game.craft(recipe):
 		show_workshop()
-		_ui.show_feedback("Crafted %s" % ExpeditionKit.RECIPES[recipe].name)
+		match recipe:
+			ExpeditionKit.Recipe.WORKBENCH:
+				_ui.show_feedback("Select slot 5 and right-click to deploy your workbench.")
+			ExpeditionKit.Recipe.SMELT:
+				_ui.show_feedback("Smelted %d alloy." % ExpeditionKit.ALLOY_YIELD)
+			ExpeditionKit.Recipe.REPAIR:
+				_ui.show_feedback("Suit integrity restored.")
+			_:
+				_ui.show_feedback("Crafted %s" % ExpeditionKit.RECIPES[recipe].name)
 	else:
 		_ui.show_feedback("The recipe is unavailable.")
 
@@ -304,9 +326,11 @@ func _refresh_chart(column: SpinBox, row: SpinBox, preview: Label, detail: Label
 	var pressure := "%d kPa" % destination.pressure_kpa
 	if destination.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT:
 		pressure += " · Suit strain"
-	detail.text = "%s  ·  %s  ·  %s\n%s  ·  %d °C\nForage: %s and %s  ·  %s" % [
+	detail.text = "%s  ·  %s  ·  %s\n%s  ·  %d °C\n%.2f g  ·  %d km radius  ·  %s\n%.2f Earth masses  ·  %.2f× Earth density\nForage  %s and %s  ·  %s" % [
 		destination.details.biome, air, "Clear now" if front.is_empty() else front, pressure,
 		roundi(destination.temperature_at(game.survival.elapsed, front)),
+		destination.gravity_g, roundi(destination.radius_earth * PlanetProfile.EARTH_RADIUS_KM),
+		PlanetProfile.ROCK_COMPOSITION[destination.rock_type], destination.mass_earth, destination.density_earth,
 		destination.details.flora, destination.details.water, destination.details.fauna,
 	]
 

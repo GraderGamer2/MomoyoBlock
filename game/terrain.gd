@@ -106,10 +106,50 @@ func nearest_forage(point: Vector2, range_squared: float) -> Variant:
 	var closest: Variant = null
 	for cell in forage.markers:
 		var distance := point.distance_squared_to(scene_point(cell, CELL_CENTER))
-		if distance <= range_squared:
+		if distance <= range_squared and pulse_path_clear(point, cell):
 			closest = cell
 			range_squared = distance
 	return closest
+
+
+func has_block_near(point: Vector2, material: int, reach: float) -> bool:
+	var first := world_cell(point - Vector2.ONE * reach)
+	var last := world_cell(point + Vector2.ONE * reach)
+	for y in range(first.y, last.y + 1):
+		for x in range(first.x, last.x + 1):
+			var cell := Vector2i(x, y)
+			if block_at(cell) == material and point.distance_squared_to(scene_point(cell, CELL_CENTER)) <= reach * reach:
+				return true
+	return false
+
+
+func pulse_path_clear(point: Vector2, target: Vector2i) -> bool:
+	var cell := world_cell(point)
+	var ray := scene_point(target, CELL_CENTER) - point
+	var step := Vector2i(ray.sign())
+	var offset := point - scene_point(cell)
+	var size := float(BlockWorld.TILE_SIZE)
+	# Advance between tile boundaries and allow the pulse to hit its target tile.
+	var intervals := Vector2(INF, INF)
+	var crossing := Vector2(INF, INF)
+	for axis in 2:
+		if step[axis] != 0:
+			var distance := size - offset[axis] if step[axis] > 0 else offset[axis]
+			intervals[axis] = size / absf(ray[axis])
+			crossing[axis] = distance / absf(ray[axis])
+	while cell != target:
+		if crossing.x < crossing.y:
+			cell.x += step.x
+			crossing.x += intervals.x
+		elif crossing.y < crossing.x:
+			cell.y += step.y
+			crossing.y += intervals.y
+		else:
+			cell += step
+			crossing += intervals
+		if cell != target and block_at(cell) != BlockWorld.Block.EMPTY:
+			return false
+	return true
 
 
 func harvest(cell: Vector2i) -> void:
@@ -243,5 +283,11 @@ func _paint_atlas() -> void:
 			image.fill_rect(Rect2i(x + size - 5, size - 6, 2, 2), Color("#c6a370"))
 		elif block == BlockWorld.Block.BEACON:
 			image.fill_rect(Rect2i(x + 1, 0, size - 2, 4), Color("#f5cc89"))
+		elif block == BlockWorld.Block.WORKBENCH:
+			image.fill_rect(Rect2i(x + 2, 5, size - 4, size - 7), Color("#203a42"))
+			image.fill_rect(Rect2i(x + 1, 4, size - 2, 3), Color("#a39c70"))
+			image.fill_rect(Rect2i(x + 4, 11, 9, 6), Color("#37585e"))
+			image.fill_rect(Rect2i(x + 15, 10, 5, 4), Color("#a0e0ba"))
+			image.fill_rect(Rect2i(x + 4, 19, size - 8, 1), Color("#4f7377"))
 
 	_atlas.texture = ImageTexture.create_from_image(image)

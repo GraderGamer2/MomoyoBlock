@@ -21,25 +21,31 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 |---|---|
 | A / D or ← / → | Walk |
 | Space | Jump |
-| Hold left click | Mine a block in reach |
-| Right click | Place the selected block |
+| Hold left click | Mine with the pulse tool |
+| Right click | Place the selected block or workbench |
 | 1–4 | Select a building material |
-| F | Gather the nearest food or water source in reach |
+| 5 | Select a carried workbench for placement |
+| F | Collect the nearest food or water source with the pulse tool |
 | R / T | Eat a ration or drink water |
-| C near a planetary beacon or the Relay Nine workbench | Open the workshop |
+| C | Open field crafting or the nearby workbench |
+| U | Equip or remove the suit |
 | O | Use a spare air canister |
 | E at a beacon | Travel between the current planet and Relay Nine |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
 
-Mine, build, and gather within two tiles of your explorer. Softer blocks are quicker to mine. Keep the pointer on the block while holding the button. Use the workshop to turn stone, ore, and alloy into a Prospector Pick for faster mining of hard blocks, air canisters for a quick top-up, or a pressure liner for dense atmospheres.
+The starter pulse tool mines and collects within **1.8 tiles**. Keep the pointer on a block while holding left click to mine it. Harder blocks take longer, and solid tiles stop the pulse. The tool has unlimited durability. The Prospector module extends its range to **2.5 tiles** and speeds up mining hard blocks. Placement has a two-tile reach.
 
-Planets generate nearby terrain as you walk or dig. The HUD shows current weather, outdoor temperature, pressure, and the direction back to the beacon. Heat raises water use, cold raises food use, and pressure above 175 kPa strains the suit. Overhead cover reduces exposure to harsh weather.
+Press **C** anywhere to make a field workbench from **2 soil and 4 stone**. Press **5**, then right-click an open tile in reach to deploy it. Press **C** nearby to smelt ore into alloy, repair the suit, or craft upgrades and air canisters. Mine the workbench to pack it up. Placed workbenches stay on the world where you leave them.
+
+Planets generate nearby terrain as you walk or dig. The HUD shows local gravity, weather, outdoor temperature, pressure, and the direction back to the beacon. Planetary gravity follows mass and radius. Larger planets of the same density have stronger gravity, and metal-rich planets are heavier than ice-rich planets of the same size. Relay Nine provides artificial gravity.
 
 The **Body temp** gauge tracks your explorer's temperature in Celsius. Prolonged exposure can push it below 34 °C or above 40 °C and start draining health. Mild air, landing beacons, and Relay Nine's sealed cabin let body temperature gradually return to 37 °C. In orbit, the suit regulates heat during EVA. Your body temperature is saved with your other vitals.
 
-Oxygen replenishes in breathable air, near a landing beacon, and inside Relay Nine's sealed cabin. The exterior deck is exposed to vacuum. If a breach vents the cabin, patch it with alloy. Hunger, thirst, and oxygen depletion damage health. Rescue sends you back to the beacon and costs half your carried blocks.
+The suit loses integrity in harsh weather and above 175 kPa. Pressure liners reduce wear from dense air, and overhead cover reduces storm exposure. Below **55% integrity**, the suit uses extra oxygen in unsafe air. A breached or removed suit gives no protection from vacuum or unbreathable air. Extreme pressure, temperature, and storms can also injure an unsuited explorer.
+
+Suit oxygen replenishes in breathable air, near a landing beacon, and inside Relay Nine's sealed cabin. The exterior deck is exposed to vacuum. If a breach vents the cabin, patch it with alloy. Rescue sends you back to the beacon, restores at least 35% suit integrity, and costs half your carried blocks.
 
 The star chart uses signed 32-bit coordinates per axis. A saved galaxy seed and generation revision reproduce each planet's name, terrain, and environmental properties. Saves store compact block and harvest changes for modified planets. They load full terrain for the nearby chunks during play.
 

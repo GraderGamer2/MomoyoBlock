@@ -6,7 +6,9 @@ const DEFAULT_FILE := "expedition.save"
 const SLOT := DIRECTORY + "/" + DEFAULT_FILE
 const COMPACT_FORMAT := 3
 const STATION_REFIT_FORMAT := 4
-const FORMAT := 5
+const TEMPERATURE_FORMAT := 5
+const FIELD_EQUIPMENT_FORMAT := 6
+const FORMAT := FIELD_EQUIPMENT_FORMAT
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -88,16 +90,31 @@ func read() -> Dictionary:
 	if loaded_format < COMPACT_FORMAT:
 		state = _migrate_legacy(state)
 	if not state.is_empty() and loaded_format < FORMAT:
-		if loaded_format < STATION_REFIT_FORMAT:
-			state.kit = ExpeditionKit.new().snapshot()
-		var vitals: Variant = state.get("vitals")
-		if vitals is Dictionary:
-			vitals["body_temperature"] = SurvivalState.NORMAL_BODY_TEMPERATURE
-		state.format = FORMAT
+		_upgrade_equipment(state)
 	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
 	return state
+
+
+func _upgrade_equipment(state: Dictionary) -> void:
+	if loaded_format < STATION_REFIT_FORMAT:
+		state.kit = ExpeditionKit.new().snapshot()
+	elif loaded_format < FIELD_EQUIPMENT_FORMAT:
+		var kit: Variant = state.get("kit")
+		if kit is Dictionary:
+			kit["prospector"] = kit.get("pick")
+			kit.erase("pick")
+			kit["workbenches"] = 0
+
+	var vitals: Variant = state.get("vitals")
+	if vitals is Dictionary:
+		if loaded_format < TEMPERATURE_FORMAT:
+			vitals["body_temperature"] = SurvivalState.NORMAL_BODY_TEMPERATURE
+		if loaded_format < FIELD_EQUIPMENT_FORMAT:
+			vitals["suit_equipped"] = true
+			vitals["suit_integrity"] = SurvivalState.MAX_LEVEL
+	state.format = FORMAT
 
 
 func write(state: Dictionary) -> Error:
@@ -145,7 +162,8 @@ static func _state_header_valid(state: Variant) -> bool:
 		if count < 0:
 			return false
 	var selected: Variant = state.get("selected")
-	return selected is int and selected >= 0 and selected < inventory.size()
+	var slots: int = inventory.size() + int(format >= FIELD_EQUIPMENT_FORMAT)
+	return selected is int and selected >= 0 and selected < slots
 
 
 static func _migrate_legacy(state: Dictionary) -> Dictionary:
