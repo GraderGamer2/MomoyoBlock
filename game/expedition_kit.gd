@@ -2,7 +2,7 @@ class_name ExpeditionKit
 extends RefCounted
 
 const B := BlockWorld.Block
-enum Recipe { WORKBENCH, SMELT, REPAIR, PULSE_1, PULSE_2, PULSE_3, CANISTER, LINER, GLASS, FRAME, INSULATION }
+enum Recipe { WORKBENCH, SMELT, REPAIR, PULSE_1, PULSE_2, PULSE_3, CANISTER, LINER, GLASS, FRAME, INSULATION, AIRLOCK, RECYCLER }
 
 const CANISTER_REFILL := 45.0
 const ALLOY_YIELD := 3
@@ -53,6 +53,14 @@ const RECIPES := [
 	{
 		"name": "Insulation ×4", "benefit": "Roof panels soften heat and cold.",
 		"cost": {B.SOIL: 2, B.ALLOY: 2}, "item": B.INSULATION, "count": 4,
+	},
+	{
+		"name": "Airlock panels ×2", "benefit": "Stack two panels for a sealed entrance.",
+		"cost": {B.ALLOY: 4, B.ORE: 1}, "item": B.AIRLOCK, "count": 2,
+	},
+	{
+		"name": "Oxygen recycler", "benefit": "Fills one airtight room from the floor.",
+		"cost": {B.ALLOY: 4, B.ORE: 2}, "item": B.RECYCLER, "count": 1,
 	},
 ]
 

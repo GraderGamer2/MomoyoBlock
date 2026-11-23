@@ -245,7 +245,7 @@ func show_workshop() -> void:
 	var subtitle := "Deploy a workbench to unlock equipment and repairs." if in_field else "Craft equipment and service your suit."
 	var body := _ui.open_panel(caption, subtitle)
 	var recipes := GridContainer.new()
-	recipes.columns = 1 if in_field else 2
+	recipes.columns = 1 if in_field else 3
 	recipes.add_theme_constant_override("h_separation", 14)
 	recipes.add_theme_constant_override("v_separation", 11)
 	body.add_child(recipes)

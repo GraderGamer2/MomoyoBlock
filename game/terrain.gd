@@ -118,14 +118,24 @@ func nearest_forage(point: Vector2, range_squared: float) -> Variant:
 
 
 func has_block_near(point: Vector2, material: int, reach: float) -> bool:
+	return nearest_block(point, material, reach) != null
+
+
+func nearest_block(point: Vector2, material: int, reach: float) -> Variant:
 	var first := world_cell(point - Vector2.ONE * reach)
 	var last := world_cell(point + Vector2.ONE * reach)
+	var closest: Variant = null
+	var range_squared := reach * reach
 	for y in range(first.y, last.y + 1):
 		for x in range(first.x, last.x + 1):
 			var cell := Vector2i(x, y)
-			if block_at(cell) == material and point.distance_squared_to(scene_point(cell, CELL_CENTER)) <= reach * reach:
-				return true
-	return false
+			if block_at(cell) != material:
+				continue
+			var distance := point.distance_squared_to(scene_point(cell, CELL_CENTER))
+			if distance <= range_squared:
+				closest = cell
+				range_squared = distance
+	return closest
 
 
 func pulse_path_clear(point: Vector2, target: Vector2i) -> bool:
@@ -307,5 +317,14 @@ func _paint_atlas() -> void:
 			image.fill_rect(Rect2i(x + 3, 3, size - 6, size - 7), Color("#483745"))
 			for stripe in 3:
 				image.fill_rect(Rect2i(x + 5, 5 + stripe * 5, size - 10, 3), color.lightened(0.12))
+		elif block == BlockWorld.Block.AIRLOCK:
+			image.fill_rect(Rect2i(x + 4, 0, size - 8, size), color.darkened(0.42))
+			image.fill_rect(Rect2i(x + 10, 0, 2, size), color.lightened(0.18))
+			image.fill_rect(Rect2i(x + 14, 10, 4, 4), Color("#9bd8bc"))
+		elif block == BlockWorld.Block.RECYCLER:
+			image.fill_rect(Rect2i(x + 3, 3, size - 6, size - 6), color.darkened(0.44))
+			image.fill_rect(Rect2i(x + 5, 4, size - 10, 3), Color("#a3e5bd"))
+			for stripe in 3:
+				image.fill_rect(Rect2i(x + 6, 10 + stripe * 3, size - 12, 1), color.lightened(0.24))
 
 	_atlas.texture = ImageTexture.create_from_image(image)

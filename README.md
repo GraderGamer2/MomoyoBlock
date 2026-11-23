@@ -32,6 +32,7 @@ The Linux template includes the native Wayland display driver. It requires x86_6
 | U | Equip or remove the suit |
 | O | Use a spare air canister |
 | E at a beacon | Travel between the current planet and Relay Nine |
+| E beside an airlock or recycler | Cycle the airlock or activate life support |
 | M at the Relay Nine beacon | Open the star chart and pick a sector |
 | F5 | Save |
 | Esc | Pause or return to the previous menu |
@@ -49,6 +50,19 @@ The **Body temp** gauge tracks your explorer's temperature in Celsius. Prolonged
 The suit loses integrity in harsh weather and above 175 kPa. Pressure liners reduce wear from dense air, and overhead cover reduces storm exposure. Below **55% integrity**, the suit uses extra oxygen in unsafe air. A breached or removed suit gives no protection from vacuum or unbreathable air. Extreme pressure, temperature, and storms can also injure an unsuited explorer.
 
 Suit oxygen replenishes in breathable air and near a landing beacon. A hull breach drains the cabin over time and pulls the explorer and loose debris toward the opening. The airflow weakens as pressure drops. Patch the breach with alloy or pressure glass and give life support time to refill the cabin. Rescue sends you back to the beacon, restores at least 35% suit integrity, and costs some construction supplies.
+
+In orbit, running out of breathable air starts an **8-second** countdown. Health then falls by **2 points per second** until a working suit with air or a breathable shelter restores your oxygen supply. The countdown resumes from its saved value when an expedition is reopened.
+
+## Build an oxygen shelter
+
+1. Craft an **oxygen recycler** and **airlock panels** at a workbench.
+2. Build an airtight rectangle with a floor, roof, and side walls made of alloy or pressure glass. The interior can be **2–12 tiles wide** and **2–8 tiles high**.
+3. Put the recycler in the floor, with its top facing the room. Stack two airlock panels in a side wall and leave two tiles of clearance on both sides of the doorway.
+4. Press **E** beside the airlock to enter, then **E** near the recycler to start filling the room. The HUD shows habitat air as it fills. Repair gaps in the shell to restore the seal.
+
+The first recycler has integrated power and serves one rectangular room. Habitats retain their air level across saves and trips.
+
+## Jetpack and exploration
 
 The starter jetpack burns for **1.5 seconds** per full charge. After a burst it cools down for **1.25 seconds**, then recharges on solid ground. It requires a working suit.
 

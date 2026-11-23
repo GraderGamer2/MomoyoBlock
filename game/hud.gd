@@ -74,11 +74,12 @@ func _ready() -> void:
 	_weather.name = "CurrentWeather"
 	readings.add_child(_weather)
 	_environment = _label("", 12, MUTED)
+	_environment.name = "LocalAir"
 	readings.add_child(_environment)
 	_atmosphere = _label("", 12, MUTED)
 	_atmosphere.name = "LocalAtmosphere"
 	readings.add_child(_atmosphere)
-	var names := ["Health", "Hunger", "Thirst", "Oxygen", "Suit", "Jetpack"]
+	var names := ["Health", "Hunger", "Thirst", "Suit O₂", "Suit", "Jetpack"]
 	var colors := [Color("#ea8e83"), Color("#f0c686"), Color("#72c9ea"), Color("#a7e8cf"), Color("#a5a9ed"), Color("#75c4d9")]
 	for i in names.size():
 		var row := HBoxContainer.new()
@@ -197,9 +198,11 @@ func show_inventory(inventory: ExpeditionInventory, selected: int, pulse_level: 
 	]
 
 
-func show_travel(region: int, nearby: bool, planet_name: String, direction: Vector2i) -> void:
+func show_travel(region: int, nearby: bool, planet_name: String, direction: Vector2i, interaction: String) -> void:
 	var prompt: String
-	if nearby:
+	if not interaction.is_empty():
+		prompt = interaction
+	elif nearby:
 		prompt = "E  Launch to Relay Nine" if region == BlockWorld.Region.SURFACE else "E  Return to %s   ·   M  Star Chart" % planet_name
 	else:
 		var vertical := "%d %s" % [absi(direction.y), "up" if direction.y < 0 else "down"]

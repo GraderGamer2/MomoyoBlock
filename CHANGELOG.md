@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 · 2026-11-23
+
+- Added an eight-second grace period when an explorer in orbit runs out of breathable air. The HUD counts down before vacuum damage begins at two health points per second.
+- Added craftable airlock panels and oxygen recyclers. Players can build and pressurize small airtight rooms for shelter on planets or in orbit.
+- Habitat air fills, leaks, and refills over time. Expeditions save habitat pressure and vacuum exposure.
+
 ## 0.6.0 · 2026-11-23
 
 - Added a nine-slot hotbar and five suit storage slots. Materials, workbenches, food, water, and spare air occupy movable stacks. Existing expeditions keep their inventory.

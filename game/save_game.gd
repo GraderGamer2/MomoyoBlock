@@ -9,7 +9,8 @@ const STATION_REFIT_FORMAT := 4
 const TEMPERATURE_FORMAT := 5
 const FIELD_EQUIPMENT_FORMAT := 6
 const SLOTTED_FORMAT := 7
-const FORMAT := SLOTTED_FORMAT
+const HABITAT_FORMAT := 8
+const FORMAT := HABITAT_FORMAT
 const MAX_BYTES := 64 * 1024 * 1024
 
 var read_error: Error = OK
@@ -90,7 +91,16 @@ func read() -> Dictionary:
 	loaded_format = state.format
 	if loaded_format < COMPACT_FORMAT:
 		state = _migrate_legacy(state)
-	if state.is_empty() or (loaded_format < FORMAT and not _upgrade_equipment(state)) or not _state_data_valid(state):
+	if state.is_empty() or (loaded_format < SLOTTED_FORMAT and not _upgrade_equipment(state)):
+		read_error = ERR_FILE_CORRUPT
+		return {}
+	if loaded_format < HABITAT_FORMAT:
+		var vitals: Variant = state.get("vitals")
+		if vitals is Dictionary:
+			vitals["vacuum_exposure"] = 0.0
+		state.habitats = {}
+		state.format = FORMAT
+	if not _state_data_valid(state):
 		read_error = ERR_FILE_CORRUPT
 		return {}
 	return state
@@ -131,7 +141,6 @@ func _upgrade_equipment(state: Dictionary) -> bool:
 	vitals["jetpack_fuel"] = SurvivalState.JETPACK_CAPACITY
 	vitals["jetpack_cooldown"] = 0.0
 	state.cabin_pressure = float(SurvivalState.CABIN_PRESSURE)
-	state.format = FORMAT
 	return true
 
 
@@ -252,6 +261,8 @@ static func _state_data_valid(state: Dictionary) -> bool:
 	var pressure: Variant = state.get("cabin_pressure")
 	if not (pressure is int or pressure is float) or not is_finite(float(pressure)) or pressure < 0.0 or pressure > SurvivalState.CABIN_PRESSURE:
 		return false
+	if not _valid_habitats(state.get("habitats"), state.vitals.elapsed):
+		return false
 	var station: Variant = state.get("station")
 	if not station is PackedByteArray or TerrainJournal.unpack(station, false).is_empty():
 		return false
@@ -259,6 +270,23 @@ static func _state_data_valid(state: Dictionary) -> bool:
 		var packet: Variant = planets[address]
 		if not address is Vector2i or not packet is PackedByteArray or TerrainJournal.unpack(packet, true).is_empty():
 			return false
+	return true
+
+
+static func _valid_habitats(data: Variant, elapsed: float) -> bool:
+	if not data is Dictionary:
+		return false
+	for zone: Variant in data:
+		if not zone is Vector3i or zone.z not in [BlockWorld.Region.SURFACE, BlockWorld.Region.STATION]:
+			return false
+		if zone.z == BlockWorld.Region.STATION and (zone.x != 0 or zone.y != 0):
+			return false
+		var rooms: Variant = data[zone]
+		if not rooms is Dictionary:
+			return false
+		for recycler: Variant in rooms:
+			if not recycler is Vector2i or not HabitatRoom.valid_snapshot(rooms[recycler], recycler, elapsed):
+				return false
 	return true
 
 

@@ -26,6 +26,9 @@ var selected := 0
 
 var _planet_journals: Dictionary[Vector2i, PackedByteArray] = {}
 var _station_journal := PackedByteArray()
+var _habitat_saves: Dictionary = {}
+var _habitat_zone := Vector3i.ZERO
+var _habitats: Dictionary[Vector2i, HabitatRoom] = {}
 var _near_beacon := false
 var save_filename := ExpeditionSave.DEFAULT_FILE
 var _save: ExpeditionSave
@@ -67,6 +70,7 @@ func _ready() -> void:
 		inventory.restore(state.inventory)
 		selected = state.selected
 		_planet_journals.assign(state.planets)
+		_habitat_saves = state.habitats
 		_load_planet(state.sector)
 		_station_journal = state.station
 		station.restore_journal(TerrainJournal.unpack(_station_journal, false))
@@ -136,7 +140,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _in_transit:
 		return
 	if event.is_action_pressed("travel"):
-		begin_travel()
+		interact()
 	elif event.is_action_pressed("star_chart") and can_choose_planet():
 		chart_requested.emit()
 	elif event.is_action_pressed("workshop"):
@@ -290,7 +294,13 @@ func gather_nearby() -> bool:
 
 
 func breathable_here() -> bool:
+	return _breathable_with(_habitat_here(survival.elapsed))
+
+
+func _breathable_with(habitat: HabitatRoom) -> bool:
 	if _at_beacon():
+		return true
+	if habitat != null and habitat.breathable():
 		return true
 	if region == BlockWorld.Region.STATION:
 		return _in_cabin() and cabin.pressure >= CabinAtmosphere.BREATHABLE_PRESSURE
@@ -376,6 +386,77 @@ func begin_travel() -> bool:
 	return _travel(sector)
 
 
+func interact() -> bool:
+	if _in_transit:
+		return false
+	if _at_beacon():
+		return begin_travel()
+	var exit: Variant = _airlock_exit()
+	if exit != null:
+		var target: Vector2i = exit
+		if not terrain.is_editable(target) or not terrain.is_editable(target + Vector2i.UP) or \
+				terrain.block_at(target) != BlockWorld.Block.EMPTY or terrain.block_at(target + Vector2i.UP) != BlockWorld.Block.EMPTY:
+			_hud.show_status("Airlock exit blocked.", false)
+			return false
+		cancel_mining()
+		explorer.position = terrain.scene_point(target, Vector2(0.5, 1.0)) - Vector2(0.0, Explorer.HALF_SIZE.y + 1.0)
+		explorer.velocity = Vector2.ZERO
+		explorer.force_update_transform()
+		_hud.show_status("Airlock cycled.")
+		_update_survival_display()
+		_update_travel()
+		return true
+	var recycler: Variant = terrain.nearest_block(explorer.position, BlockWorld.Block.RECYCLER, WORKBENCH_REACH)
+	return false if recycler == null else _commission_habitat(recycler)
+
+
+func _airlock_exit() -> Variant:
+	var cell := terrain.world_cell(explorer.position)
+	for side: int in [-1, 1]:
+		var panel := cell + Vector2i(side, 0)
+		if terrain.block_at(panel) != BlockWorld.Block.AIRLOCK:
+			continue
+		if terrain.block_at(panel + Vector2i.DOWN) == BlockWorld.Block.AIRLOCK:
+			panel += Vector2i.DOWN
+		elif terrain.block_at(panel + Vector2i.UP) != BlockWorld.Block.AIRLOCK:
+			continue
+		if explorer.position.distance_squared_to(terrain.scene_point(panel, ActiveTerrain.CELL_CENTER)) <= BEACON_RANGE_SQUARED:
+			return panel + Vector2i(side, 0)
+	return null
+
+
+func _commission_habitat(recycler: Vector2i) -> bool:
+	var area := HabitatRoom.survey(terrain.world, recycler)
+	if not area.has_area():
+		_hud.show_status("Life support needs a sealed room with the recycler in its floor.", false)
+		return false
+	var retired: Array[Vector2i] = []
+	var retained_air := 0.0
+	for device in _habitats:
+		var other: HabitatRoom = _habitats[device]
+		if device == recycler or not area.intersects(other.bounds):
+			continue
+		if terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
+			_hud.show_status("That room already has a commissioned recycler.", false)
+			return false
+		if area == other.bounds:
+			other.advance_to(survival.elapsed)
+			retained_air = other.air
+		retired.append(device)
+	for device in retired:
+		_habitats.erase(device)
+	var room: HabitatRoom = _habitats.get(recycler)
+	if room == null or room.bounds != area:
+		room = HabitatRoom.new(area, survival.elapsed)
+		room.air = retained_air
+		_habitats[recycler] = room
+	room.advance_to(survival.elapsed)
+	room.sync(terrain.world, recycler)
+	_hud.show_status("Life support online. Habitat air %.0f%%." % (room.air * 100.0 / SurvivalState.CABIN_PRESSURE))
+	_update_survival_display()
+	return true
+
+
 func land_at(address: Vector2i) -> bool:
 	return can_choose_planet() and _travel(address)
 
@@ -383,6 +464,7 @@ func land_at(address: Vector2i) -> bool:
 func save_expedition(show_feedback := true) -> bool:
 	_rebase_explorer()
 	_remember_planet()
+	_store_habitats()
 	if station.journal_dirty:
 		_station_journal = TerrainJournal.pack(station.edits, station.harvested)
 		station.journal_dirty = false
@@ -392,6 +474,7 @@ func save_expedition(show_feedback := true) -> bool:
 		"region": region, "sector": sector, "origin": terrain.origin_cell, "position": explorer.position,
 		"inventory": inventory.snapshot(), "selected": selected, "planets": _planet_journals,
 		"station": _station_journal, "cabin_pressure": cabin.pressure, "vitals": survival.snapshot(), "kit": kit.snapshot(),
+		"habitats": _habitat_saves,
 	})
 	if show_feedback:
 		_hud.show_status("Expedition saved" if result == OK else "Could not save the expedition", result == OK)
@@ -434,6 +517,7 @@ func _finish_travel() -> void:
 
 func _open_region(next_region: int, point: Vector2, origin := Vector2i.ZERO) -> void:
 	cancel_mining()
+	_store_habitats()
 	for body in _loose_objects.get_children():
 		body.queue_free()
 	region = next_region
@@ -444,6 +528,7 @@ func _open_region(next_region: int, point: Vector2, origin := Vector2i.ZERO) -> 
 			if region == BlockWorld.Region.SURFACE else BlockWorld.STATION_GRAVITY_PX
 	explorer.force_update_transform()
 	terrain.open_region(surface if region == BlockWorld.Region.SURFACE else station, point, origin)
+	_load_habitats()
 	_update_beacon()
 	_station_art.visible = region == BlockWorld.Region.STATION
 	_wildlife.show_local_life(terrain, surface.planet if region == BlockWorld.Region.SURFACE else null)
@@ -468,18 +553,53 @@ func _weather_name(elapsed: float) -> String:
 	return surface.planet.weather_at(elapsed) if region == BlockWorld.Region.SURFACE else ""
 
 
+func _habitat_here(now: float) -> HabitatRoom:
+	if _habitats.is_empty():
+		return null
+	var cell := terrain.world_cell(explorer.position)
+	for room: HabitatRoom in _habitats.values():
+		if room.contains(cell):
+			room.advance_to(now)
+			return room
+	return null
+
+
+func _store_habitats() -> void:
+	if terrain.world == null:
+		return
+	var states := {}
+	for device in _habitats:
+		var room: HabitatRoom = _habitats[device]
+		room.advance_to(survival.elapsed)
+		if room.air > 0.0 or terrain.world.material_at(device) == BlockWorld.Block.RECYCLER:
+			states[device] = room.snapshot()
+	if states.is_empty():
+		_habitat_saves.erase(_habitat_zone)
+	else:
+		_habitat_saves[_habitat_zone] = states
+
+
+func _load_habitats() -> void:
+	_habitat_zone = Vector3i(0, 0, region) if region == BlockWorld.Region.STATION else Vector3i(sector.x, sector.y, region)
+	_habitats.clear()
+	var states: Dictionary = _habitat_saves.get(_habitat_zone, {})
+	for device: Vector2i in states:
+		_habitats[device] = HabitatRoom.from_snapshot(states[device], terrain.world, device, survival.elapsed)
+
+
 func _update_survival_display(seconds := 0.0) -> void:
 	var elapsed := survival.elapsed + seconds
+	var habitat := _habitat_here(elapsed)
 	var front := _weather_name(elapsed)
 	var on_surface := region == BlockWorld.Region.SURFACE
 	var inside := not on_surface and _in_cabin()
 	var storm_wear := PlanetProfile.storm_wear(front)
 	var cover := _overhead_block() if on_surface else BlockWorld.Block.EMPTY
-	var sheltered := cover != BlockWorld.Block.EMPTY
+	var sheltered := cover != BlockWorld.Block.EMPTY or (habitat != null and habitat.sealed())
 	var pressure: float = surface.planet.pressure_kpa if on_surface else (cabin.pressure if inside else 0.0)
 	var outside_temperature := surface.planet.temperature_at(elapsed, front) if on_surface else survival.vacuum_exposure_temperature()
 	var temperature := outside_temperature
-	var breathable := breathable_here()
+	var breathable := _breathable_with(habitat)
 	var air := "Breathable air" if breathable else "Suit oxygen in use"
 	var at_beacon := _at_beacon()
 	if inside:
@@ -495,6 +615,11 @@ func _update_survival_display(seconds := 0.0) -> void:
 		temperature = SurvivalState.CABIN_TEMPERATURE
 		if on_surface or not cabin.breaches.is_empty() or cabin.pressure < CabinAtmosphere.BREATHABLE_PRESSURE:
 			air = "Beacon shelter"
+	elif habitat != null:
+		var clean_air := habitat.air / SurvivalState.CABIN_PRESSURE
+		pressure = lerpf(pressure, SurvivalState.CABIN_PRESSURE, clean_air)
+		temperature = lerpf(temperature, SurvivalState.CABIN_TEMPERATURE, clean_air)
+		air = habitat.condition()
 	elif on_surface:
 		if pressure > SurvivalState.SUIT_PRESSURE_LIMIT:
 			air = "Suit strain · liner equipped" if kit.liner else "Suit strain · Pressure liner needed"
@@ -503,12 +628,19 @@ func _update_survival_display(seconds := 0.0) -> void:
 		if cover == BlockWorld.Block.INSULATION:
 			temperature = lerpf(outside_temperature, SurvivalState.CABIN_TEMPERATURE, 0.45)
 	if seconds > 0.0:
-		survival.advance(seconds, breathable, 0.0 if at_beacon or sheltered else storm_wear, pressure, temperature, kit.liner)
+		survival.advance(seconds, breathable, 0.0 if at_beacon or sheltered else storm_wear,
+				pressure, temperature, kit.liner, not on_surface)
 		if survival.health == 0.0:
 			_rescue()
 			return
 
-	if not survival.suit_active():
+	var airless := not on_surface and not breathable and (not survival.suit_active() or survival.oxygen <= 0.0)
+	if not airless:
+		survival.vacuum_exposure = 0.0
+	if airless:
+		var remaining := SurvivalState.VACUUM_GRACE - survival.vacuum_exposure
+		air = "No oxygen · %d s grace" % ceili(remaining) if remaining > 0.0 else "No oxygen · Losing health"
+	elif not survival.suit_active():
 		if not breathable:
 			air = "No breathable air"
 		air += " · Suit breached" if survival.suit_equipped else " · Suit off"
@@ -522,6 +654,8 @@ func _update_survival_display(seconds := 0.0) -> void:
 	var environment := "Cabin %.0f kPa" % cabin.pressure if inside else "Vacuum · Cold exposure"
 	if on_surface:
 		environment = "Outside  %d kPa · %d °C" % [surface.planet.pressure_kpa, roundi(outside_temperature)]
+	if habitat != null and not at_beacon:
+		environment = "Habitat air %.0f%% · %.0f kPa" % [habitat.air * 100.0 / SurvivalState.CABIN_PRESSURE, pressure]
 	_hud.show_survival(survival, inventory, air, weather_text if on_surface else "Orbit", environment,
 			(on_surface and surface.planet.pressure_kpa > SurvivalState.SUIT_PRESSURE_LIMIT) or
 			(inside and not cabin.breaches.is_empty()),
@@ -546,6 +680,18 @@ func _in_cabin() -> bool:
 
 
 func _on_block_changed(cell: Vector2i) -> void:
+	var habitat_changed := false
+	for device in _habitats.keys():
+		var room: HabitatRoom = _habitats[device]
+		if not room.bounds.grow(1).has_point(cell):
+			continue
+		room.advance_to(survival.elapsed)
+		room.sync(terrain.world, device)
+		if room.air == 0.0 and terrain.world.material_at(device) != BlockWorld.Block.RECYCLER:
+			_habitats.erase(device)
+		habitat_changed = true
+	if habitat_changed:
+		_update_survival_display()
 	if region != BlockWorld.Region.STATION or not BlockWorld.STATION_PRESSURE_AREA.has_point(cell):
 		return
 	var previous := cabin.breaches
@@ -653,7 +799,13 @@ func _at_beacon() -> bool:
 func _update_travel() -> void:
 	_near_beacon = _at_beacon()
 	var direction := Vector2i(0, BlockWorld.PAD_ROW - 1) - terrain.world_cell(explorer.position)
-	_hud.show_travel(region, _near_beacon, surface.planet.title(), direction)
+	var interaction := ""
+	if not _near_beacon:
+		if _airlock_exit() != null:
+			interaction = "E  Cycle airlock"
+		elif terrain.has_block_near(explorer.position, BlockWorld.Block.RECYCLER, WORKBENCH_REACH):
+			interaction = "E  Activate life support"
+	_hud.show_travel(region, _near_beacon, surface.planet.title(), direction, interaction)
 	_hud.show_workshop(workbench_name())
 
 

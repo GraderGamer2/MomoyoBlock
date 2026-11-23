@@ -35,9 +35,15 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 - Let a breached cabin vent over time. Airflow pulls loose objects toward an opening while a pressure difference remains. Repaired cabins repressurize.
 - Craft pressure glass, support frames, and insulation at workbenches. Use beacons for travel and shelter.
 
-## Next · Habitats, storage, and ecology
+## 0.7 · Habitats and EVA
 
-- Let players build sealed rooms and airlocks. Add power and oxygen equipment so habitats can support long expeditions away from the beacons.
+- Give explorers eight seconds to find air in orbit before health begins to fall. Show the countdown on the HUD.
+- Let players build small sealed rooms, cycle airlocks, and commission floor-mounted oxygen recyclers.
+- Persist habitat air across trips and saves. Breaches vent and repaired rooms refill over time.
+
+## Next · Habitat power, storage, and ecology
+
+- Connect life support to power generation and storage. Extend the room system to larger and interconnected habitats.
 - Add storage containers and more recipes that use resources from different environments.
 - Give wildlife distinct behaviors, habitats, and roles in local ecosystems. Add plant regrowth and storms that respond to climate and shelter.
 
@@ -61,5 +67,6 @@ Gravity, atmosphere, climate, flora, and fauna should determine what supplies yo
 
 ## Later · Art and audio
 
+- Discuss the visual and audio direction with the project owner and agree on which assets to use.
 - Replace the prototype geometry with original block textures and artwork for terrain, explorers, NPCs, wildlife, stations, and ship interiors.
 - Add animation, interface icons, weather effects, sound effects, ambient audio, and music as the scale and pacing settle.

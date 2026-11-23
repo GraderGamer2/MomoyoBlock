@@ -4,6 +4,8 @@ const GAME := preload("res://game/main.tscn")
 const APP := preload("res://game/app.tscn")
 const B := BlockWorld.Block
 const I := preload("res://game/expedition_inventory.gd")
+const TEST_RECYCLER := Vector2i(8, BlockWorld.PAD_ROW)
+const TEST_ROOF := Vector2i(8, BlockWorld.PAD_ROW - 4)
 
 var _failures := 0
 
@@ -32,6 +34,7 @@ func _run() -> void:
 	_check_inventory()
 	_check_gravity()
 	_check_survival_model()
+	_check_vacuum_grace()
 	_check_body_temperature()
 	_check_suit()
 	_check_jetpack()
@@ -144,9 +147,14 @@ func _run() -> void:
 	var health := game.survival.health
 	var tank := game.survival.oxygen
 	await _frames(32)
-	_expect(game.survival.health < health and is_equal_approx(game.survival.oxygen, tank),
-			"Vacuum injures an unsuited explorer while their disconnected tank retains its air")
+	var air_warning := game.find_child("LocalAir", true, false) as Label
+	_expect(game.survival.health == health and is_equal_approx(game.survival.oxygen, tank) and air_warning.text.contains("grace"),
+			"The EVA deck keeps health steady and shows a countdown when the suit comes off")
+	await _frames(520)
+	_expect(game.survival.health < health and game.survival.health > health - 5.0 and air_warning.text.contains("Losing health"),
+			"Prolonged exposure on the EVA deck drains health slowly after the countdown")
 	_expect(game.toggle_suit(), "The suit can be put on again on the EVA deck")
+	_expect(game.survival.vacuum_exposure == 0.0, "Restored oxygen clears the vacuum countdown")
 	game.explorer.position = BlockWorld.pad_position()
 	game.explorer.velocity = Vector2.ZERO
 	_expect(game.land_at(Vector2i.RIGHT), "The star chart accepts a different sector at the beacon")
@@ -158,6 +166,7 @@ func _run() -> void:
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.EMPTY, "Edits belong to the planet where they were made")
 	var foreign_block := Vector2i(1, BlockWorld.PAD_ROW - 2)
 	_expect(game.place(foreign_block), "You can build on another planet")
+	var saved_air := _check_habitat(game)
 	_expect(game.save_expedition(), "The expedition saves a destination and its changes")
 	game.queue_free()
 	await get_tree().process_frame
@@ -166,12 +175,27 @@ func _run() -> void:
 	await _frames(6)
 	_expect(game.sector == Vector2i.RIGHT and game.terrain.block_at(foreign_block) == BlockWorld.Block.ALLOY,
 			"Reopening restores a generated destination and its edits")
+	var restored_habitat: HabitatRoom = game._habitats.get(TEST_RECYCLER)
+	if restored_habitat != null:
+		_expect(is_equal_approx(restored_habitat.air, saved_air) and game.breathable_here(),
+				"A leaking habitat reloads with its remaining breathable air")
+		game._update_survival_display(14.0)
+		_expect(not game.breathable_here(), "A habitat eventually loses enough air to require a suit")
+		game.terrain.set_block(TEST_ROOF, B.GLASS)
+		_expect(not game.breathable_here(), "A habitat patch begins a gradual refill")
+		game._update_survival_display(5.0)
+		_expect(game.breathable_here(), "Pressure glass restores the seal and the recycler supplies air")
+	else:
+		_expect(false, "A commissioned habitat is restored on reload")
+	game.explorer.position = BlockWorld.pad_position()
+	game.explorer.velocity = Vector2.ZERO
 	_expect(game.begin_travel(), "The second planet connects back to Relay Nine")
 	await _frames(90)
 	_expect(game.land_at(Vector2i.ZERO), "You can chart a return trip to the first planet")
 	await _frames(90)
 	_expect(game.terrain.block_at(above_surface) == BlockWorld.Block.SOIL and game.surface.harvested.has(-6),
 			"Returning to the original sector restores terrain and forage changes")
+	_expect(game._habitats.is_empty(), "Habitat records are scoped to the sector where the room was built")
 	game = await _check_far_terrain(game)
 	_expect(not FileAccess.file_exists("user://logs/godot.log"), "Development file logging is disabled")
 	game.queue_free()
@@ -331,6 +355,74 @@ func _check_survival_model() -> void:
 	var first := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	var second := BlockWorld.new(BlockWorld.Region.SURFACE, address)
 	_expect(first.make_chunk(Vector2i.ZERO) == second.make_chunk(Vector2i.ZERO), "Distant addresses reproduce the same terrain")
+
+
+func _check_vacuum_grace() -> void:
+	var bare := SurvivalState.new()
+	bare.suit_equipped = false
+	bare.advance(7.75, false, 0.0, 0.0, bare.vacuum_exposure_temperature())
+	_expect(bare.health == 100.0 and bare.vacuum_exposure == 7.75, "Unsuited vacuum exposure starts with a grace period")
+	bare.advance(1.25, false, 0.0, 0.0, bare.vacuum_exposure_temperature())
+	_expect(bare.health == 98.0, "Health drains at two points a second after eight seconds")
+	var continued := SurvivalState.new()
+	continued.restore(bare.snapshot())
+	continued.advance(1.0, false, 0.0, 0.0)
+	_expect(continued.health == 96.0, "Reloading preserves exposure time")
+	continued.advance(0.25, true, 0.0)
+	_expect(continued.vacuum_exposure == 0.0, "Breathable shelter resets exposure")
+
+	var empty_tank := SurvivalState.new()
+	empty_tank.oxygen = SurvivalState.VACUUM_DRAIN
+	empty_tank.advance(8.5, false, 0.0, 0.0)
+	_expect(empty_tank.health == 100.0 and is_equal_approx(empty_tank.vacuum_exposure, 7.5),
+			"Oxygen from the suit delays the start of the grace period")
+	empty_tank.advance(1.0, false, 0.0, 0.0)
+	_expect(empty_tank.health == 99.0, "An empty tank gets the same gradual loss as an unequipped suit")
+
+
+func _check_habitat(game: MomoyoGame) -> float:
+	var floor_y := BlockWorld.PAD_ROW
+	for x in range(6, 10):
+		game.terrain.set_block(Vector2i(x, floor_y), B.ALLOY)
+		if x != TEST_ROOF.x:
+			game.terrain.set_block(Vector2i(x, TEST_ROOF.y), B.GLASS)
+	for y in range(floor_y - 3, floor_y):
+		game.terrain.set_block(Vector2i(5, y), B.AIRLOCK if y >= floor_y - 2 else B.ALLOY)
+		game.terrain.set_block(Vector2i(10, y), B.ALLOY)
+	game.terrain.set_block(TEST_RECYCLER, B.RECYCLER)
+	game.explorer.position = game.terrain.scene_point(TEST_RECYCLER + Vector2i.UP, ActiveTerrain.CELL_CENTER)
+	game.explorer.velocity = Vector2.ZERO
+	_expect(not game.interact(), "A recycler cannot start with a hole in the roof")
+	game.terrain.set_block(TEST_ROOF, B.GLASS)
+	_expect(game.interact() and not game.breathable_here(), "The sealed habitat starts filling when commissioned")
+	game._update_survival_display(5.0)
+	_expect(not game.breathable_here(), "A freshly sealed room requires time to fill with air")
+	game._update_survival_display(5.0)
+	_expect(game.breathable_here(), "A filled habitat supplies breathable air on a hostile planet")
+
+	var interior_block := Vector2i(7, floor_y - 2)
+	game.terrain.set_block(interior_block, B.ALLOY)
+	var occupied_room: HabitatRoom = game._habitats.get(TEST_RECYCLER)
+	_expect(occupied_room != null and occupied_room.sealed() and game.breathable_here(),
+			"An interior block redirects air without opening the shell")
+	game.terrain.set_block(interior_block, B.EMPTY)
+
+	game.explorer.position = game.terrain.scene_point(Vector2i(6, floor_y - 1), ActiveTerrain.CELL_CENTER)
+	_expect(game.interact() and not game.breathable_here(), "The airlock exits to the hostile atmosphere")
+	var obstruction := Vector2i(6, floor_y - 2)
+	game.terrain.set_block(obstruction, B.SOIL)
+	_expect(not game.interact(), "An obstruction prevents cycling through the airlock")
+	game.terrain.set_block(obstruction, B.EMPTY)
+	_expect(game.interact() and game.breathable_here(), "Cycling into the habitat preserves its air")
+	var room: HabitatRoom = game._habitats.get(TEST_RECYCLER)
+	if room == null:
+		_expect(false, "The commissioned room is registered")
+		return 0.0
+	var full := room.air
+	game.terrain.set_block(TEST_ROOF, B.EMPTY)
+	game._update_survival_display(1.0)
+	_expect(room.air < full and game.breathable_here(), "A leaking habitat loses air gradually")
+	return room.air
 
 
 func _check_body_temperature() -> void:
@@ -632,6 +724,15 @@ func _check_previous_format() -> void:
 					game.inventory.count(I.CANISTER) == 2 and game.survival.jetpack_fuel == 1.5,
 					"0.5 saves preserve all resources, including large stacks, and add a charged jetpack")
 			game.free()
+			var slotted := ExpeditionSave.new().read()
+			if not slotted.is_empty():
+				slotted.format = ExpeditionSave.SLOTTED_FORMAT
+				slotted.erase("habitats")
+				slotted.vitals.erase("vacuum_exposure")
+				_expect(previous.write(slotted) == OK, "A 0.6 fixture can be written")
+				var restored := ExpeditionSave.new().read()
+				_expect(restored.get("habitats") == {} and restored.get("vitals", {}).get("vacuum_exposure") == 0.0 and
+						restored.get("inventory") == slotted.inventory, "0.6 saves retain their slots and gain the vacuum defaults")
 
 
 func _check_journal() -> void:

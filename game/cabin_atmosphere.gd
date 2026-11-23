@@ -19,10 +19,15 @@ func sync(world: BlockWorld) -> void:
 func advance(seconds: float) -> void:
 	if breaches.is_empty():
 		pressure = move_toward(pressure, SurvivalState.CABIN_PRESSURE, seconds * PUMP_RATE)
-	elif pressure > 0.0:
-		pressure *= exp(-LEAK_RATE * mini(breaches.size(), 6) * seconds)
-		if pressure < 0.25:
-			pressure = 0.0
+	else:
+		pressure = vent(pressure, breaches.size(), seconds)
+
+
+static func vent(initial: float, openings: int, seconds: float) -> float:
+	if initial == 0.0:
+		return 0.0
+	var remaining := initial * exp(-LEAK_RATE * mini(openings, 6) * seconds)
+	return remaining if remaining >= 0.25 else 0.0
 
 
 func airflow_at(point: Vector2, origin: Vector2i) -> Vector2:
